@@ -1,0 +1,12 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
+
+## [Unreleased]
+
+### Added
+
+- Strict iCalendar parsing, full Sabre/VObject validation, and structured issues.
+- Typed Calendar, Event, Organizer, Attendee, Alarm, and AlarmTrigger APIs.
+- Generic Property and Component access for repeated, unknown, and non-event data.
+- Safe string, path, stream, and UploadedFile input methods.

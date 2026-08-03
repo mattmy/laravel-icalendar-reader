@@ -2,34 +2,95 @@
 
 [繁體中文](README.zh-TW.md)
 
-A clean, typed iCalendar reader for Laravel, powered by Sabre/VObject.
+Read, validate, and query `.ics` calendars through a clean, typed Laravel API. Sabre/VObject handles RFC parsing while this package provides immutable Laravel-friendly objects, Collections, structured errors, and safe input boundaries.
 
-> This package is under active development and its public API is not stable yet.
+> The package is under active 0.x development. The public API may change before 1.0.
 
-## Current development slice
+## Installation
 
-The package currently provides strict parsing and validation for strings, local paths,
-streams, and Laravel uploaded files. It exposes the first typed Calendar and Event
-fields, including a reliable `isAllDay()` method based on the `DTSTART` value type.
+```bash
+composer require mattmy/laravel-icalendar-reader
+```
+
+Laravel discovers the service provider and `ICalendar` facade automatically. To publish the optional configuration:
+
+```bash
+php artisan vendor:publish --tag=icalendar-reader-config
+```
+
+## Quick start
 
 ```php
 use Mattmy\ICalendar\Facades\ICalendar;
 
 $calendar = ICalendar::read($contents);
-$event = $calendar->events()->first();
 
-if ($event?->isAllDay()) {
-    // DTSTART is an iCalendar DATE value.
+foreach ($calendar->events() as $event) {
+    $event->summary;
+    $event->startsAt;
+    $event->endsAt;
+    $event->isAllDay();
+    $event->organizer;
+    $event->attendees;
+    $event->alarms;
 }
 ```
 
-Invalid content throws `InvalidCalendar` through `read*()` methods. Matching `try*()`
-methods return `null` only for invalid iCalendar content; source, size, and configuration
-errors remain visible.
+Read from an iCalendar string, local path, caller-owned stream, or Laravel `UploadedFile`:
 
-Generation, remote URL downloads, CalDAV, and recurrence expansion are intentionally
-outside the 1.0 scope.
+```php
+$calendar = ICalendar::read($contents);
+$calendar = ICalendar::fromPath($path);
+$calendar = ICalendar::fromStream($stream);
+$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
+```
+
+Every source uses the same strict parse and validation pipeline. Throwing methods raise `InvalidCalendar` for invalid content; matching `try*()` methods return `null` only for invalid content. File, stream, upload, size, and configuration failures remain exceptions.
+
+## Query and preserve data
+
+```php
+$event = $calendar->event($uid);
+$events = $calendar->eventsBetween($from, $until);
+$freeBusy = $calendar->components('VFREEBUSY')->first();
+$periods = $freeBusy?->properties('FREEBUSY');
+$fbType = $periods?->first()?->parameter('FBTYPE');
+
+$calendar->toArray();          // Domain-oriented output
+$calendar->toJson();           // JSON_THROW_ON_ERROR
+$calendar->toComponentArray(); // Complete normalized component tree
+```
+
+Repeated properties, parameters, multi-values, recurrence properties, `VTODO`, `VJOURNAL`, `VFREEBUSY`, `VTIMEZONE`, vendor properties, and unknown components remain accessible through `Property` and generic `Component` objects.
+
+## Time semantics
+
+- UTC and `TZID` date-times retain their timezone.
+- Floating values use `icalendar_reader.floating_timezone`, then `app.timezone`.
+- Invalid timezone configuration falls back to UTC and creates a Calendar warning.
+- `isAllDay()` checks the `DTSTART` value type instead of guessing from midnight or duration.
+- All-day `DTEND` remains exclusive; `lastDay` provides the inclusive convenience date.
+
+## Validation and warnings
+
+```php
+use Mattmy\ICalendar\Exceptions\InvalidCalendar;
+
+try {
+    $calendar = ICalendar::read($contents);
+} catch (InvalidCalendar $exception) {
+    $issues = $exception->issues();
+}
+
+$warnings = $calendar->warnings();
+```
+
+## Limits and security
+
+The package does not generate calendars, download remote URLs, implement CalDAV, persist data, or expand recurrence occurrences. `eventsBetween()` only queries concrete `VEVENT` components present in the document.
+
+All inputs are limited by `icalendar_reader.max_bytes` before parsing. `fromPath()` accepts readable local regular files only, streams remain owned by the caller, and errors do not include complete calendar contents. Calendar data can contain personal information; avoid logging raw input or full parsed output by default.
 
 ## License
 
-The MIT License (MIT). See [LICENSE](LICENSE).
+The MIT License. See [LICENSE](LICENSE).

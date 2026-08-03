@@ -5,21 +5,25 @@ declare(strict_types=1);
 namespace Mattmy\ICalendar;
 
 use Carbon\CarbonImmutable;
+use DateInterval;
+use DateTimeInterface;
 use DateTimeZone;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Http\UploadedFile;
+use LogicException;
 use Mattmy\ICalendar\Exceptions\CalendarTooLarge;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Support\BoundedInputReader;
 use Mattmy\ICalendar\Support\TimezoneResolver;
-use Sabre\VObject\Component;
+use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Node;
 use Sabre\VObject\ParseException;
-use Sabre\VObject\Property;
+use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
+use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
 use Sabre\VObject\Reader as SabreReader;
 
 final readonly class Reader
@@ -270,10 +274,10 @@ final readonly class Reader
      */
     private function validationIssue(int $level, string $message, Node $node): CalendarIssue
     {
-        $component = $node instanceof Component
+        $component = $node instanceof SabreComponent
             ? $node->name
-            : ($node->parent instanceof Component ? $node->parent->name : null);
-        $property = $node instanceof Property ? $node->name : null;
+            : ($node->parent instanceof SabreComponent ? $node->parent->name : null);
+        $property = $node instanceof SabreProperty ? $node->name : null;
 
         return new CalendarIssue(
             level: $level,
@@ -303,6 +307,15 @@ final readonly class Reader
             }
         }
 
+        $properties = $this->hydrateProperties($component, $floatingTimezone);
+        $components = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreComponent) {
+                $components[] = $this->hydrateComponent($child, $floatingTimezone);
+            }
+        }
+
         return new Calendar(
             version: $this->stringProperty($component, 'VERSION'),
             productId: $this->stringProperty($component, 'PRODID'),
@@ -311,6 +324,8 @@ final readonly class Reader
             floatingTimezone: $floatingTimezone,
             eventItems: $events,
             warningItems: $warnings,
+            propertyItems: $properties,
+            componentItems: $components,
             component: clone $component,
         );
     }
@@ -320,29 +335,151 @@ final readonly class Reader
      */
     private function hydrateEvent(VEvent $component, string $floatingTimezone): Event
     {
-        $startsAt = null;
-        $allDay = false;
-        $dateProperty = $this->firstProperty($component, 'DTSTART');
+        $startProperty = $this->firstProperty($component, 'DTSTART');
+        $endProperty = $this->firstProperty($component, 'DTEND');
+        $durationProperty = $this->firstProperty($component, 'DURATION');
+        $startsAt = $this->dateTimeValue($startProperty, $floatingTimezone);
+        $endsAt = $this->dateTimeValue($endProperty, $floatingTimezone);
+        $allDay = $startProperty instanceof DateTimeProperty
+            && $startProperty->getValueType() === 'DATE';
+        $duration = $durationProperty instanceof DurationProperty
+            ? $durationProperty->getDateInterval()
+            : null;
 
-        if ($dateProperty instanceof DateTimeProperty) {
-            $allDay = $dateProperty->getValueType() === 'DATE';
-            $dateTime = $dateProperty->getDateTime(new DateTimeZone($floatingTimezone));
-            $startsAt = $dateTime === null ? null : CarbonImmutable::instance($dateTime);
+        if ($endsAt === null && $startsAt !== null && $duration !== null) {
+            $endsAt = $startsAt->add($duration);
+        } elseif ($endsAt === null && $startsAt !== null && $allDay) {
+            $duration = new DateInterval('P1D');
+            $endsAt = $startsAt->addDay();
+        } elseif ($startsAt !== null && $endsAt !== null) {
+            $duration = $startsAt->diff($endsAt);
+        }
+
+        $attendees = \array_map(
+            fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
+            $this->directProperties($component, 'ATTENDEE'),
+        );
+        $alarms = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
+                $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
+            }
         }
 
         return new Event(
             uid: $this->stringProperty($component, 'UID'),
             summary: $this->stringProperty($component, 'SUMMARY'),
+            description: $this->stringProperty($component, 'DESCRIPTION'),
+            location: $this->stringProperty($component, 'LOCATION'),
             startsAt: $startsAt,
+            endsAt: $endsAt,
+            startIsFloating: $this->isFloating($startProperty),
+            endIsFloating: $endProperty === null && $endsAt !== null
+                ? $this->isFloating($startProperty)
+                : $this->isFloating($endProperty),
+            lastDay: $allDay && $endsAt !== null ? $endsAt->subDay()->startOfDay() : null,
+            duration: $duration,
+            timestamp: $this->dateTimeValue($this->firstProperty($component, 'DTSTAMP'), $floatingTimezone),
+            createdAt: $this->dateTimeValue($this->firstProperty($component, 'CREATED'), $floatingTimezone),
+            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, 'LAST-MODIFIED'), $floatingTimezone),
+            status: $this->upperStringProperty($component, 'STATUS'),
+            classification: $this->upperStringProperty($component, 'CLASS'),
+            priority: $this->integerProperty($component, 'PRIORITY'),
+            sequence: $this->integerProperty($component, 'SEQUENCE'),
+            url: $this->stringProperty($component, 'URL'),
+            organizer: ($organizer = $this->firstProperty($component, 'ORGANIZER')) === null
+                ? null
+                : $this->hydrateOrganizer($organizer),
+            attendees: collect($attendees),
+            alarms: collect($alarms),
+            categories: collect($this->stringValues($component, 'CATEGORIES')),
             allDay: $allDay,
+            propertyItems: $this->hydrateProperties($component, $floatingTimezone),
             component: clone $component,
+        );
+    }
+
+    /** Hydrate one organizer from a cal-address property. */
+    private function hydrateOrganizer(SabreProperty $property): Organizer
+    {
+        $address = (string) $property;
+        $parameters = $this->parameters($property);
+
+        return new Organizer(
+            address: $address,
+            email: $this->emailAddress($address),
+            name: $this->singleParameter($parameters, 'CN'),
+            sentBy: $this->singleParameter($parameters, 'SENT-BY'),
+            directory: $this->singleParameter($parameters, 'DIR'),
+            parameterItems: $parameters,
+        );
+    }
+
+    /** Hydrate one attendee while preserving all parameters. */
+    private function hydrateAttendee(SabreProperty $property): Attendee
+    {
+        $address = (string) $property;
+        $parameters = $this->parameters($property);
+
+        return new Attendee(
+            address: $address,
+            email: $this->emailAddress($address),
+            name: $this->singleParameter($parameters, 'CN'),
+            role: $this->upperParameter($parameters, 'ROLE'),
+            status: $this->upperParameter($parameters, 'PARTSTAT'),
+            rsvp: match ($this->upperParameter($parameters, 'RSVP')) {
+                'TRUE' => true,
+                'FALSE' => false,
+                default => null,
+            },
+            type: $this->upperParameter($parameters, 'CUTYPE'),
+            delegatedFrom: collect($this->parameterList($parameters, 'DELEGATED-FROM')),
+            delegatedTo: collect($this->parameterList($parameters, 'DELEGATED-TO')),
+            parameterItems: $parameters,
+        );
+    }
+
+    /** Hydrate one VALARM and its typed trigger. */
+    private function hydrateAlarm(SabreComponent $component, string $floatingTimezone): Alarm
+    {
+        $triggerProperty = $this->firstProperty($component, 'TRIGGER');
+        $trigger = null;
+
+        if ($triggerProperty instanceof DurationProperty) {
+            $trigger = new AlarmTrigger(
+                relativeDuration: $triggerProperty->getDateInterval(),
+                absoluteDateTime: null,
+                relation: $this->upperParameter($this->parameters($triggerProperty), 'RELATED') ?? 'START',
+            );
+        } elseif ($triggerProperty instanceof DateTimeProperty) {
+            $trigger = new AlarmTrigger(
+                relativeDuration: null,
+                absoluteDateTime: $this->dateTimeValue($triggerProperty, $floatingTimezone),
+                relation: null,
+            );
+        }
+
+        return new Alarm(
+            action: $this->upperStringProperty($component, 'ACTION'),
+            trigger: $trigger,
+            description: $this->stringProperty($component, 'DESCRIPTION'),
+            summary: $this->stringProperty($component, 'SUMMARY'),
+            attendees: collect(\array_map(
+                fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
+                $this->directProperties($component, 'ATTENDEE'),
+            )),
+            repeat: $this->integerProperty($component, 'REPEAT'),
+            duration: ($duration = $this->firstProperty($component, 'DURATION')) instanceof DurationProperty
+                ? $duration->getDateInterval()
+                : null,
         );
     }
 
     /**
      * Read the first decoded property value without creating empty strings.
      */
-    private function stringProperty(Component $component, string $name): ?string
+    private function stringProperty(SabreComponent $component, string $name): ?string
     {
         $property = $this->firstProperty($component, $name);
 
@@ -358,14 +495,253 @@ final readonly class Reader
     /**
      * Return the first direct property with the requested name.
      */
-    private function firstProperty(Component $component, string $name): ?Property
+    private function firstProperty(SabreComponent $component, string $name): ?SabreProperty
     {
         foreach ($component->select($name) as $node) {
-            if ($node instanceof Property) {
+            if ($node instanceof SabreProperty) {
                 return $node;
             }
         }
 
         return null;
+    }
+
+    /** Convert an iCalendar date or date-time property to an immutable value. */
+    private function dateTimeValue(?SabreProperty $property, string $floatingTimezone): ?CarbonImmutable
+    {
+        if (! $property instanceof DateTimeProperty) {
+            return null;
+        }
+
+        $dateTime = $property->getDateTime(new DateTimeZone($floatingTimezone));
+
+        return $dateTime === null ? null : CarbonImmutable::instance($dateTime);
+    }
+
+    /** Determine whether a date property has floating semantics. */
+    private function isFloating(?SabreProperty $property): bool
+    {
+        if (! $property instanceof DateTimeProperty) {
+            return false;
+        }
+
+        if ($property->getValueType() === 'DATE') {
+            return true;
+        }
+
+        return $property['TZID'] === null
+            && ! \str_ends_with(\strtoupper($property->getRawMimeDirValue()), 'Z');
+    }
+
+    /** Read and normalize an uppercase token property. */
+    private function upperStringProperty(SabreComponent $component, string $name): ?string
+    {
+        $value = $this->stringProperty($component, $name);
+
+        return $value === null ? null : \strtoupper($value);
+    }
+
+    /** Read an optional integer property. */
+    private function integerProperty(SabreComponent $component, string $name): ?int
+    {
+        $value = $this->stringProperty($component, $name);
+
+        return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Read every decoded string part from repeated direct properties.
+     *
+     * @return list<string>
+     */
+    private function stringValues(SabreComponent $component, string $name): array
+    {
+        $values = [];
+
+        foreach ($this->directProperties($component, $name) as $property) {
+            foreach ($property->getParts() as $value) {
+                $values[] = (string) $value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Return repeated direct properties without collapsing document order.
+     *
+     * @return list<SabreProperty>
+     */
+    private function directProperties(SabreComponent $component, string $name): array
+    {
+        return \array_values(\array_filter(
+            $component->select($name),
+            static fn (mixed $property): bool => $property instanceof SabreProperty,
+        ));
+    }
+
+    /**
+     * Normalize all property parameters while preserving multi-values.
+     *
+     * @return array<string, string|list<string>>
+     */
+    private function parameters(SabreProperty $property): array
+    {
+        $parameters = [];
+
+        foreach ($property->parameters() as $parameter) {
+            $parts = \array_values(\array_map(
+                static fn (mixed $part): string => (string) $part,
+                $parameter->getParts(),
+            ));
+            $parameters[\strtoupper((string) $parameter->name)] = \count($parts) === 1
+                ? $parts[0]
+                : $parts;
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * Return the first value of a normalized parameter.
+     *
+     * @param  array<string, string|list<string>>  $parameters
+     */
+    private function singleParameter(array $parameters, string $name): ?string
+    {
+        $value = $parameters[$name] ?? null;
+
+        return \is_string($value) ? $value : ($value[0] ?? null);
+    }
+
+    /**
+     * Return one normalized uppercase parameter token.
+     *
+     * @param  array<string, string|list<string>>  $parameters
+     */
+    private function upperParameter(array $parameters, string $name): ?string
+    {
+        $value = $this->singleParameter($parameters, $name);
+
+        return $value === null ? null : \strtoupper($value);
+    }
+
+    /**
+     * @param  array<string, string|list<string>>  $parameters
+     * @return list<string>
+     */
+    private function parameterList(array $parameters, string $name): array
+    {
+        $value = $parameters[$name] ?? null;
+
+        return $value === null ? [] : (\is_array($value) ? $value : [$value]);
+    }
+
+    /** Return the address portion only for mailto cal-address values. */
+    private function emailAddress(string $address): ?string
+    {
+        return \str_starts_with(\strtolower($address), 'mailto:')
+            ? \substr($address, 7)
+            : null;
+    }
+
+    /**
+     * Hydrate a generic component and every direct child in document order.
+     */
+    private function hydrateComponent(SabreComponent $component, string $floatingTimezone): Component
+    {
+        $components = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreComponent) {
+                $components[] = $this->hydrateComponent($child, $floatingTimezone);
+            }
+        }
+
+        return new Component(
+            name: \strtoupper($component->name),
+            propertyItems: $this->hydrateProperties($component, $floatingTimezone),
+            componentItems: $components,
+            component: clone $component,
+        );
+    }
+
+    /**
+     * Hydrate direct properties without collapsing repeated names.
+     *
+     * @return list<Property>
+     */
+    private function hydrateProperties(SabreComponent $component, string $floatingTimezone): array
+    {
+        $properties = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreProperty) {
+                $properties[] = $this->hydrateProperty($child, $floatingTimezone);
+            }
+        }
+
+        return $properties;
+    }
+
+    /**
+     * Hydrate one property with typed values, raw value, and all parameters.
+     */
+    private function hydrateProperty(SabreProperty $property, string $floatingTimezone): Property
+    {
+        if ($property->name === null || \trim($property->name) === '') {
+            throw new LogicException('Sabre returned a property without a name.');
+        }
+
+        $values = $this->propertyValues($property, $floatingTimezone);
+        $parameters = $this->parameters($property);
+
+        $value = match (\count($values)) {
+            0 => null,
+            1 => $values[0],
+            default => $values,
+        };
+
+        return new Property(
+            name: \strtoupper($property->name),
+            type: \strtolower($property->getValueType()),
+            value: $value,
+            values: $values,
+            parameterItems: $parameters,
+            rawValue: $property->getRawMimeDirValue(),
+        );
+    }
+
+    /**
+     * Convert known Sabre values while preserving unknown values as decoded strings.
+     *
+     * @return list<mixed>
+     */
+    private function propertyValues(SabreProperty $property, string $floatingTimezone): array
+    {
+        if ($property instanceof DateTimeProperty) {
+            return \array_values(\array_map(
+                static fn (DateTimeInterface|DateInterval $value): CarbonImmutable|DateInterval => $value instanceof DateTimeInterface ? CarbonImmutable::instance($value) : $value,
+                $property->getDateTimes(new DateTimeZone($floatingTimezone)),
+            ));
+        }
+
+        if ($property instanceof DurationProperty) {
+            return [$property->getDateInterval()];
+        }
+
+        $type = \strtoupper($property->getValueType());
+
+        return \array_values(\array_map(
+            static function (mixed $part) use ($type): mixed {
+                return match ($type) {
+                    'BOOLEAN' => \strtoupper((string) $part) === 'TRUE',
+                    'FLOAT' => (float) $part,
+                    'INTEGER' => (int) $part,
+                    default => $part,
+                };
+            },
+            $property->getParts(),
+        ));
     }
 }

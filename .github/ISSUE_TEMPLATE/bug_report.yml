@@ -1,0 +1,20 @@
+name: Bug report
+description: Report reproducible incorrect iCalendar reader behavior
+body:
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Provide minimal anonymized iCalendar content and PHP code.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Versions
+      description: Package, PHP, and Laravel versions.
+    validations:
+      required: true

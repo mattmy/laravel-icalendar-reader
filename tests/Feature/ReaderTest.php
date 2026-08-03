@@ -10,17 +10,6 @@ use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Sabre\VObject\ParseException;
 
-function calendarFixture(string $name): string
-{
-    $contents = \file_get_contents(__DIR__ . "/../Fixtures/{$name}.ics");
-
-    if ($contents === false) {
-        throw new RuntimeException("Unable to read the {$name} fixture.");
-    }
-
-    return $contents;
-}
-
 it('reads and validates a calendar through the facade', function () {
     $calendar = ICalendar::read(calendarFixture('basic-event'));
     $event = $calendar->events()->first();

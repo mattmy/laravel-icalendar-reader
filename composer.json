@@ -11,6 +11,11 @@
         "laravel",
         "reader"
     ],
+    "homepage": "https://github.com/mattmy/laravel-icalendar-reader",
+    "support": {
+        "issues": "https://github.com/mattmy/laravel-icalendar-reader/issues",
+        "source": "https://github.com/mattmy/laravel-icalendar-reader"
+    },
     "require": {
         "php": "^8.3",
         "illuminate/contracts": "^11.0|^12.0|^13.0",
