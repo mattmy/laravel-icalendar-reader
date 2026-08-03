@@ -113,3 +113,16 @@ it('reports each invalid timezone setting and falls back to UTC', function () {
         ->toContain('app.timezone')
         ->toContain('icalendar_reader.floating_timezone');
 });
+
+it('exposes a configuration warning while reading a floating-time fixture', function () {
+    config()->set('app.timezone', 'Not/A_Timezone');
+
+    $calendar = ICalendar::read(calendarFixture('floating-time-warning'));
+    $warning = $calendar->warnings()->sole();
+
+    expect($calendar->floatingTimezone)->toBe('UTC')
+        ->and($calendar->events()->sole()->startIsFloating)->toBeTrue()
+        ->and($warning->level)->toBe(2)
+        ->and($warning->code)->toBe('invalid_timezone_configuration')
+        ->and($warning->source)->toBe('configuration');
+});

@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Matt ICS Samples//Timezone Warning Test//ZH-TW
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:floating-timezone-warning@example.test
+DTSTAMP:20260803T040000Z
+DTSTART:20260808T143000
+DTEND:20260808T153000
+SUMMARY:Floating timezone warning 測試
+DESCRIPTION:將 app.timezone 設為無效 IANA timezone 後讀取此檔案。
+LOCATION:線上會議
+END:VEVENT
+END:VCALENDAR
