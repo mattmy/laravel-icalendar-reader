@@ -1,0 +1,70 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "mattmy/laravel-icalendar-reader",
+    "description": "Read, validate, and query iCalendar files through a clean, typed Laravel API.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "calendar",
+        "icalendar",
+        "ics",
+        "laravel",
+        "reader"
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^11.0|^12.0|^13.0",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "nesbot/carbon": "^3.0",
+        "sabre/vobject": "^5.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.29",
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0|^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mattmy\\ICalendar\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Mattmy\\ICalendar\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Mattmy\\ICalendar\\CalendarServiceProvider"
+            ],
+            "aliases": {
+                "ICalendar": "Mattmy\\ICalendar\\Facades\\ICalendar"
+            }
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "check": [
+            "composer validate --strict",
+            "@test",
+            "@analyse",
+            "@format:check",
+            "composer audit"
+        ],
+        "format": "pint",
+        "format:check": "pint --test",
+        "test": "pest"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

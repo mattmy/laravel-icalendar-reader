@@ -1,0 +1,11 @@
+<?php
+
+namespace Sabre\VObject;
+
+/**
+ * @implements \IteratorAggregate<int, Node>
+ * @implements \ArrayAccess<int|string, Node>
+ */
+abstract class Node implements \IteratorAggregate, \ArrayAccess
+{
+}

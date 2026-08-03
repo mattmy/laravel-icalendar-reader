@@ -1,0 +1,14 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - src
+    bootstrapFiles:
+        - vendor/larastan/larastan/bootstrap.php
+    stubFiles:
+        - stubs/SabreNode.stub
+    parallel:
+        maximumNumberOfProcesses: 1
+    tmpDir: build/phpstan
