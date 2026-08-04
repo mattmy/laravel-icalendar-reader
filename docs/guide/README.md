@@ -27,7 +27,7 @@ exceptions.
 
 `Calendar` exposes metadata, `events()`, `event($uid)`, `hasEvents()`,
 `eventsBetween()`, `properties()`, `hasProperty()`, `property()`,
-`components()`, and `warnings()`.
+`components()`, `hasComponent()`, `component()`, and `warnings()`.
 
 `Event` exposes `uid`, `summary`, `description`, `location`, `startsAt`,
 `endsAt`, `lastDay`, `duration`, `timestamp`, `createdAt`, `lastModifiedAt`,
@@ -45,6 +45,8 @@ duration. An `AlarmTrigger` is either relative or absolute.
 duplicates, parameters, multiple values, recurrence data, and unknown `X-*`
 properties. `components()` exposes untyped `VTODO`, `VJOURNAL`, `VFREEBUSY`,
 `VTIMEZONE`, and unknown components without recursively flattening them.
+Use `component($name)` for the first direct match and `hasComponent($name)` for
+a presence check; both compare names case-insensitively and never recurse.
 
 Use `toArray()` or `toJson()` for the domain-oriented read model and
 `toComponentArray()` for the complete normalized component tree. These methods

@@ -48,6 +48,8 @@ it('validates property and component query names', function () {
 
     expect(fn () => $calendar->property('   '))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $calendar->components(''))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $calendar->hasComponent("\t"))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $calendar->component('   '))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $component->properties("\t"))->toThrow(InvalidArgumentException::class);
 });
 
@@ -57,7 +59,33 @@ it('supports presence queries without recursing into child components', function
     expect($calendar->hasProperty())->toBeTrue()
         ->and($calendar->hasProperty('METHOD'))->toBeTrue()
         ->and($calendar->hasProperty('FREEBUSY'))->toBeFalse()
+        ->and($calendar->hasComponent())->toBeTrue()
+        ->and($calendar->hasComponent('vfreebusy'))->toBeTrue()
+        ->and($calendar->hasComponent('VALARM'))->toBeFalse()
+        ->and($calendar->component('vfreebusy'))->toBe($calendar->components()->first())
+        ->and($calendar->component('VTODO'))->toBeNull()
         ->and($calendar->components('VFREEBUSY')->sole()->hasProperty())->toBeTrue();
+});
+
+it('returns the first matching direct component in document order', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Component Queries//EN
+BEGIN:VTODO
+UID:first@example.test
+DTSTAMP:20260804T000000Z
+END:VTODO
+BEGIN:VTODO
+UID:second@example.test
+DTSTAMP:20260804T000000Z
+END:VTODO
+END:VCALENDAR
+ICS);
+
+    expect($calendar->components('VTODO'))->toHaveCount(2)
+        ->and($calendar->component('vtodo')?->property('UID')?->value)
+        ->toBe('first@example.test');
 });
 
 it('exports a normalized component tree without collapsing repeated properties', function () {

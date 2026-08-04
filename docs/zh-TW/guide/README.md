@@ -35,6 +35,8 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 `properties()` 依文件順序保留直接 properties，包括重複項目、parameters、多值、
 recurrence 與未知 `X-*` 資料。`components()` 保留 `VTODO`、`VJOURNAL`、
 `VFREEBUSY`、`VTIMEZONE` 與未知 components，而且不會遞迴攤平結構。
+使用 `component($name)` 取得第一個直接匹配項目，使用 `hasComponent($name)`
+檢查是否存在；兩者皆不區分名稱大小寫，也不會遞迴搜尋。
 
 `toArray()`／`toJson()` 輸出 domain read model；`toComponentArray()` 輸出完整
 normalized component tree。這些方法不會產生 `.ics`，也不保證 byte round-trip。

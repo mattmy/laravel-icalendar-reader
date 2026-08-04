@@ -52,7 +52,8 @@ $calendar = ICalendar::fromUploadedFile($request->file('calendar'));
 ```php
 $event = $calendar->event($uid);
 $events = $calendar->eventsBetween($from, $until);
-$freeBusy = $calendar->components('VFREEBUSY')->first();
+$freeBusy = $calendar->component('VFREEBUSY');
+$hasTodos = $calendar->hasComponent('VTODO');
 $periods = $freeBusy?->properties('FREEBUSY');
 $fbType = $periods?->first()?->parameter('FBTYPE');
 

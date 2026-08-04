@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format follows Keep
 - Strict iCalendar parsing, full Sabre/VObject validation, and structured issues.
 - Typed Calendar, Event, Organizer, Attendee, Alarm, and AlarmTrigger APIs.
 - Generic Property and Component access for repeated, unknown, and non-event data.
+- Singular and presence queries for direct calendar components.
 - Safe string, path, stream, and UploadedFile input methods.
 - Mapping warnings for unresolved document timezones without silently applying UTC.
 - Complete PHPDoc contracts with an automated reflection guard.

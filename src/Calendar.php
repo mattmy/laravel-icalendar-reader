@@ -204,6 +204,26 @@ final readonly class Calendar implements JsonSerializable
     }
 
     /**
+     * Determine whether any direct child component, or a named one, exists.
+     *
+     * @throws InvalidArgumentException
+     */
+    public function hasComponent(?string $name = null): bool
+    {
+        return $this->components($name)->isNotEmpty();
+    }
+
+    /**
+     * Return the first direct child component matching a case-insensitive name.
+     *
+     * @throws InvalidArgumentException
+     */
+    public function component(string $name): ?Component
+    {
+        return $this->components($name)->first();
+    }
+
+    /**
      * Return a deep clone of the underlying low-level calendar component.
      */
     public function rawComponent(): VCalendar
