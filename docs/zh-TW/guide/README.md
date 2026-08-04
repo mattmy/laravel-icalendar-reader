@@ -30,6 +30,10 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 序號、URL、organizer、attendees、alarms 與 categories。Readonly `allDay` property
 與 `isAllDay()` 回傳相同結果；可使用任一方式判斷全天事件，不要以午夜或持續時間猜測。
 
+傳入標題至 `events($eventName)`，會依文件順序回傳所有完全相符且區分大小寫的
+`SUMMARY`。傳入 `null` 會回傳全部事件；沒有相符項目則回傳空 Collection。
+`hasEvents($eventName)` 採用相同規則。
+
 ## 完整資料存取
 
 `properties()` 依文件順序保留直接 properties，包括重複項目、parameters、多值、

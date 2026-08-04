@@ -53,13 +53,21 @@ final readonly class Calendar implements JsonSerializable
     ) {}
 
     /**
-     * Return events in document order.
+     * Return events in document order, optionally filtered by exact summary.
      *
      * @return Collection<int, Event>
      */
-    public function events(): Collection
+    public function events(?string $eventName = null): Collection
     {
-        return collect($this->eventItems);
+        $events = collect($this->eventItems);
+
+        if ($eventName === null) {
+            return $events;
+        }
+
+        return $events
+            ->filter(static fn (Event $event): bool => $event->summary === $eventName)
+            ->values();
     }
 
     /**
@@ -67,17 +75,7 @@ final readonly class Calendar implements JsonSerializable
      */
     public function hasEvents(?string $name = null): bool
     {
-        if ($name === null) {
-            return $this->eventItems !== [];
-        }
-
-        foreach ($this->eventItems as $event) {
-            if ($event->summary === $name) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->events($name)->isNotEmpty();
     }
 
     /**

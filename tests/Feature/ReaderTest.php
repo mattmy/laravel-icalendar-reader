@@ -38,6 +38,50 @@ it('identifies all-day events from the DTSTART value type', function () {
         ->and($event->startsAt?->toDateString())->toBe('2026-08-03');
 });
 
+it('filters events by exact case-sensitive summary in document order', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Event Filtering Tests//EN
+BEGIN:VEVENT
+UID:first@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T010000Z
+SUMMARY:Repeated name
+END:VEVENT
+BEGIN:VEVENT
+UID:second@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T020000Z
+SUMMARY:Repeated name
+END:VEVENT
+BEGIN:VEVENT
+UID:case@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T030000Z
+SUMMARY:repeated name
+END:VEVENT
+BEGIN:VEVENT
+UID:missing@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T040000Z
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    expect($calendar->events())->toHaveCount(4)
+        ->and($calendar->events(null))->toHaveCount(4)
+        ->and($calendar->events('Repeated name')->pluck('uid')->all())->toBe([
+            'first@example.test',
+            'second@example.test',
+        ])
+        ->and($calendar->events('repeated name')->sole()->uid)->toBe('case@example.test')
+        ->and($calendar->events('Missing name'))->toBeEmpty()
+        ->and($calendar->events(''))->toBeEmpty()
+        ->and($calendar->hasEvents('Repeated name'))->toBeTrue()
+        ->and($calendar->hasEvents('Missing name'))->toBeFalse();
+});
+
 it('throws structured invalid calendar errors for syntax failures', function () {
     try {
         ICalendar::read("BEGIN:VCALENDAR\r\nBROKEN");
