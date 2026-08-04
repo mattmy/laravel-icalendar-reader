@@ -13,7 +13,8 @@ function publicFixturePath(string $name): string
 it('maps all-day event semantics and common fields from a real fixture', function () {
     $event = ICalendar::fromPath(publicFixturePath('01-all-day-event'))->events()->sole();
 
-    expect($event->isAllDay())->toBeTrue()
+    expect($event->allDay)->toBeTrue()
+        ->and($event->isAllDay())->toBe($event->allDay)
         ->and($event->description)->toContain('Laravel 套件設計討論')
         ->and($event->location)->toBe('臺南市中西區')
         ->and($event->startsAt?->toDateString())->toBe('2026-08-15')
@@ -86,7 +87,8 @@ it('keeps non-event components and emits the fixed domain and normalized outputs
         'start_is_floating', 'end_is_floating', 'is_all_day', 'last_day', 'duration',
         'timestamp', 'created_at', 'last_modified_at', 'status', 'classification',
         'priority', 'sequence', 'url', 'organizer', 'attendees', 'alarms', 'categories',
-    ])->and(json_decode($calendar->toJson(), true, flags: JSON_THROW_ON_ERROR))
+    ])->not->toHaveKey('all_day')
+        ->and(json_decode($calendar->toJson(), true, flags: JSON_THROW_ON_ERROR))
         ->toBe($calendar->toArray());
 });
 

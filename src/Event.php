@@ -28,6 +28,8 @@ final readonly class Event
         public ?CarbonImmutable $startsAt,
         /** The exclusive event end; all-day DTEND is never reduced by one day. */
         public ?CarbonImmutable $endsAt,
+        /** Whether DTSTART uses the iCalendar DATE value type. */
+        public bool $allDay,
         /** Whether DTSTART has DATE or floating DATE-TIME semantics. */
         public bool $startIsFloating,
         /** Whether DTEND, or its derived value, has floating semantics. */
@@ -51,7 +53,6 @@ final readonly class Event
         public Collection $alarms,
         /** @var Collection<int, string> */
         public Collection $categories,
-        private bool $allDay,
         private array $propertyItems,
         private VEvent $component,
     ) {}

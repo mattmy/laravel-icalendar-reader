@@ -27,8 +27,8 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 `Calendar` 提供 metadata、`events()`、`event($uid)`、`hasEvents()`、
 `eventsBetween()`、properties、components 與 warnings。`Event` 提供 UID、標題、
 描述、地點、開始與結束時間、effective duration、timestamps、狀態、分類、優先度、
-序號、URL、organizer、attendees、alarms 與 categories。請用 `isAllDay()` 判斷
-全天事件，不要以午夜或持續時間猜測。
+序號、URL、organizer、attendees、alarms 與 categories。Readonly `allDay` property
+與 `isAllDay()` 回傳相同結果；可使用任一方式判斷全天事件，不要以午夜或持續時間猜測。
 
 ## 完整資料存取
 

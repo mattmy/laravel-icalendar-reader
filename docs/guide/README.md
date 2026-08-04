@@ -32,8 +32,9 @@ exceptions.
 `Event` exposes `uid`, `summary`, `description`, `location`, `startsAt`,
 `endsAt`, `lastDay`, `duration`, `timestamp`, `createdAt`, `lastModifiedAt`,
 `status`, `classification`, `priority`, `sequence`, `url`, `organizer`,
-`attendees`, `alarms`, and `categories`. Use `isAllDay()` instead of inferring
-all-day status from midnight or duration.
+`attendees`, `alarms`, and `categories`. The readonly `allDay` property and
+`isAllDay()` return the same value; use either instead of inferring all-day
+status from midnight or duration.
 
 Organizer and Attendee preserve their cal-address and parameters. Alarm keeps
 its action, trigger, description, summary, attendees, repeat count, and

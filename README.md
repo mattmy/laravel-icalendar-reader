@@ -29,6 +29,7 @@ foreach ($calendar->events() as $event) {
     $event->summary;
     $event->startsAt;
     $event->endsAt;
+    $event->allDay;
     $event->isAllDay();
     $event->organizer;
     $event->attendees;
@@ -69,7 +70,7 @@ Repeated properties, parameters, multi-values, recurrence properties, `VTODO`, `
 - UTC and `TZID` date-times retain their timezone.
 - Floating values use `icalendar_reader.floating_timezone`, then `app.timezone`.
 - Invalid timezone configuration falls back to UTC and creates a Calendar warning.
-- `isAllDay()` checks the `DTSTART` value type instead of guessing from midnight or duration.
+- `allDay` and `isAllDay()` expose the same `DTSTART` value-type check instead of guessing from midnight or duration.
 - All-day `DTEND` remains exclusive; `lastDay` provides the inclusive convenience date.
 
 ## Validation and warnings

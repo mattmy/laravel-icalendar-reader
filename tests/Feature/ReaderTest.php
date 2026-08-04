@@ -25,13 +25,15 @@ it('reads and validates a calendar through the facade', function () {
         ->and($event->uid)->toBe('architecture-review@example.test')
         ->and($event->summary)->toBe('Architecture review')
         ->and($event->startsAt)->toEqual(CarbonImmutable::parse('2026-08-03 06:30:00', 'UTC'))
-        ->and($event->isAllDay())->toBeFalse();
+        ->and($event->allDay)->toBeFalse()
+        ->and($event->isAllDay())->toBe($event->allDay);
 });
 
 it('identifies all-day events from the DTSTART value type', function () {
     $event = ICalendar::read(calendarFixture('all-day-event'))->events()->sole();
 
-    expect($event->isAllDay())->toBeTrue()
+    expect($event->allDay)->toBeTrue()
+        ->and($event->isAllDay())->toBe($event->allDay)
         ->and($event->startsAt?->timezoneName)->toBe('Asia/Taipei')
         ->and($event->startsAt?->toDateString())->toBe('2026-08-03');
 });

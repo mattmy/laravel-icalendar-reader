@@ -29,6 +29,7 @@ foreach ($calendar->events() as $event) {
     $event->summary;
     $event->startsAt;
     $event->endsAt;
+    $event->allDay;
     $event->isAllDay();
     $event->organizer;
     $event->attendees;
@@ -69,7 +70,7 @@ $calendar->toComponentArray();
 - UTC 與帶 `TZID` 的日期時間會保留時區。
 - Floating time 依序使用 `icalendar_reader.floating_timezone` 與 `app.timezone`。
 - 無效時區設定會 fallback 至 UTC，並在 Calendar 產生 warning。
-- `isAllDay()` 依 `DTSTART` value type 判斷，不以午夜或 duration 猜測。
+- `allDay` 與 `isAllDay()` 提供相同的 `DTSTART` value type 判斷，不以午夜或 duration 猜測。
 - 全天 `DTEND` 保持 exclusive；`lastDay` 提供 inclusive convenience date。
 
 ## 驗證與警告

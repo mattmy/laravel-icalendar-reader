@@ -311,7 +311,7 @@ final readonly class Calendar implements JsonSerializable
             'ends_at' => $event->endsAt?->toIso8601String(),
             'start_is_floating' => $event->startIsFloating,
             'end_is_floating' => $event->endIsFloating,
-            'is_all_day' => $event->isAllDay(),
+            'is_all_day' => $event->allDay,
             'last_day' => $event->lastDay?->toDateString(),
             'duration' => self::durationString($event->duration),
             'timestamp' => $event->timestamp?->toIso8601String(),

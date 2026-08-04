@@ -31,7 +31,8 @@ END:VCALENDAR
 ICS);
     $event = $calendar->events()->sole();
 
-    expect($event->isAllDay())->toBeFalse()
+    expect($event->allDay)->toBeFalse()
+        ->and($event->isAllDay())->toBe($event->allDay)
         ->and($event->startIsFloating)->toBeTrue()
         ->and($event->endIsFloating)->toBeTrue()
         ->and($event->startsAt?->timezoneName)->toBe('Asia/Taipei');
