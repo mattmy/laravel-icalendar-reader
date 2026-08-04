@@ -66,6 +66,46 @@ $calendar->toComponentArray();
 
 重複 properties、parameters、多值、recurrence properties、`VTODO`、`VJOURNAL`、`VFREEBUSY`、`VTIMEZONE`、廠商欄位及未知 components，都會保留在 `Property` 與 generic `Component` API。
 
+## Typed 欄位
+
+`Collection<int, T>` 代表內容為 `T` 的 Laravel Collection。日期時間使用
+`CarbonImmutable`，duration 使用 `DateInterval`。
+
+| Event property | 型別 | 語意 |
+| --- | --- | --- |
+| `uid`, `summary`, `description`, `location`, `status`, `classification`, `url` | `?string` | 常見 VEVENT 文字欄位。 |
+| `startsAt`, `endsAt` | `?CarbonImmutable` | 開始與 exclusive 結束；`endsAt` 可能由 `DURATION` 推導。 |
+| `allDay` | `bool` | 只有 `DTSTART` value type 為 `DATE` 時才是 `true`。 |
+| `startIsFloating`, `endIsFloating` | `bool` | 對應值是否具有 floating/date 語意。 |
+| `lastDay` | `?CarbonImmutable` | 僅全天事件提供的 inclusive 最後日期。 |
+| `duration` | `?DateInterval` | 事件的 effective duration。 |
+| `timestamp`, `createdAt`, `lastModifiedAt` | `?CarbonImmutable` | `DTSTAMP`、`CREATED` 與 `LAST-MODIFIED`。 |
+| `priority`, `sequence` | `?int` | VEVENT 數值 metadata。 |
+| `organizer` | `?Organizer` | 解析後的 organizer。 |
+| `attendees` | `Collection<int, Attendee>` | 依文件順序保留所有 attendees。 |
+| `alarms` | `Collection<int, Alarm>` | 所有 direct `VALARM` children。 |
+| `categories` | `Collection<int, string>` | 解碼後的 category values。 |
+
+| Organizer property | 型別 | 語意 |
+| --- | --- | --- |
+| `address` | `string` | 包含 scheme 的原始 organizer address。 |
+| `email`, `name`, `sentBy`, `directory` | `?string` | 常用正規化值；所有 parameters 仍可由 `parameters()` 取得。 |
+
+| Attendee property | 型別 | 語意 |
+| --- | --- | --- |
+| `address` | `string` | 原始 attendee address。 |
+| `email`, `name`, `role`, `status`, `type` | `?string` | 常見 attendee metadata。 |
+| `rsvp` | `?bool` | 解析後的 RSVP 值。 |
+| `delegatedFrom`, `delegatedTo` | `Collection<int, string>` | 所有 delegation addresses。 |
+
+| Alarm property | 型別 | 語意 |
+| --- | --- | --- |
+| `action`, `description`, `summary` | `?string` | 常見 VALARM 欄位。 |
+| `trigger` | `?AlarmTrigger` | 相對 duration 或絕對日期時間 trigger。 |
+| `attendees` | `Collection<int, Attendee>` | Alarm attendees。 |
+| `repeat` | `?int` | 重複次數。 |
+| `duration` | `?DateInterval` | 每次重複之間的間隔。 |
+
 ## 時間語意
 
 - UTC 與帶 `TZID` 的日期時間會保留時區。
@@ -93,6 +133,14 @@ $warnings = $calendar->warnings();
 套件不產生 calendar、不下載遠端 URL、不實作 CalDAV、不儲存資料，也不展開 recurrence occurrences。`eventsBetween()` 只查詢文件中實際存在的 `VEVENT`。
 
 所有輸入在解析前都受 `icalendar_reader.max_bytes` 限制。`fromPath()` 只接受可讀取的本機一般檔案，stream 仍由呼叫端管理，錯誤訊息不包含完整 calendar。Calendar 可能包含個人資料，預設不應記錄原始輸入或完整解析輸出。
+
+## 升級
+
+在 0.x 開發期間，minor release 可能包含公開 API 或固定輸出的 breaking change。
+升級前請檢查 [CHANGELOG.md](CHANGELOG.md)、使用合適的 Composer constraint，並執行
+應用程式自己的 calendar fixture 與 serialization tests。1.0 之後，公開 API、已記錄
+的日期語意、例外類別與固定 array keys 遵循 Semantic Versioning；minor release
+仍可能新增 warning code。
 
 ## 授權
 

@@ -58,7 +58,12 @@ it('keeps recurrence data and selects the master while querying concrete events'
 
     expect($calendar->events())->toHaveCount(2)
         ->and($calendar->event($uid)?->hasProperty('RECURRENCE-ID'))->toBeFalse()
-        ->and($calendar->event($uid)?->property('RRULE'))->not->toBeNull()
+        ->and($calendar->event($uid)?->property('RRULE')?->value)->toBe([
+            'FREQ' => 'WEEKLY',
+            'INTERVAL' => '1',
+            'BYDAY' => ['TU', 'TH'],
+            'COUNT' => '10',
+        ])
         ->and($calendar->events()->last()?->hasProperty('RECURRENCE-ID'))->toBeTrue()
         ->and($calendar->events()->first()?->endsAt?->format('H:i'))->toBe('01:45');
 

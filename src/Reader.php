@@ -29,7 +29,12 @@ use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
 use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
 use Sabre\VObject\TimeZoneUtil;
 
-/** Read, validate, and hydrate iCalendar input from explicit source types. */
+/**
+ * Read, validate, and hydrate iCalendar input from explicit source types.
+ *
+ * @phpstan-type StructuredValue array<array-key, string|list<string>>
+ * @phpstan-type PropertyAtom bool|int|float|string|CarbonImmutable|DateInterval|StructuredValue
+ */
 final readonly class Reader
 {
     /**
@@ -666,7 +671,7 @@ final readonly class Reader
     /**
      * Convert known Sabre values while preserving unknown values as decoded strings.
      *
-     * @return list<mixed>
+     * @return list<PropertyAtom>
      */
     private function propertyValues(SabreProperty $property, string $floatingTimezone): array
     {
@@ -689,18 +694,46 @@ final readonly class Reader
         }
 
         $type = \strtoupper($property->getValueType());
+        $parts = $property->getParts();
 
-        return \array_values(\array_map(
-            static function (mixed $part) use ($type): mixed {
+        if (! \array_is_list($parts)) {
+            return [self::structuredPropertyValue($parts)];
+        }
+
+        return \array_map(
+            static function (mixed $part) use ($type): bool|int|float|string|array {
+                if (\is_array($part)) {
+                    return self::structuredPropertyValue($part);
+                }
+
                 return match ($type) {
                     'BOOLEAN' => \strtoupper((string) $part) === 'TRUE',
                     'FLOAT' => (float) $part,
                     'INTEGER' => (int) $part,
-                    default => $part,
+                    default => (string) $part,
                 };
             },
-            $property->getParts(),
-        ));
+            $parts,
+        );
+    }
+
+    /**
+     * Normalize one structured parser value without discarding named rule parts.
+     *
+     * @param  array<array-key, mixed>  $value
+     * @return StructuredValue
+     */
+    private static function structuredPropertyValue(array $value): array
+    {
+        $structured = [];
+
+        foreach ($value as $key => $item) {
+            $structured[(string) $key] = \is_array($item)
+                ? \array_values(\array_map(static fn (mixed $part): string => (string) $part, $item))
+                : (string) $item;
+        }
+
+        return $structured;
     }
 
     /**

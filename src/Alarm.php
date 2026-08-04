@@ -25,6 +25,7 @@ final readonly class Alarm
         /** @var Collection<int, Attendee> */
         public Collection $attendees,
         public ?int $repeat,
+        /** The parsed alarm duration, isolated from mutable parser state. */
         public ?DateInterval $duration,
     ) {}
 }

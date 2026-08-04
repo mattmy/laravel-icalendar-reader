@@ -34,3 +34,30 @@ it('documents every package class and declared method', function () {
         }
     }
 });
+
+it('documents promoted public properties whose native types need refinement', function () {
+    $properties = [
+        [Mattmy\ICalendar\Property::class, 'value'],
+        [Mattmy\ICalendar\Property::class, 'values'],
+        [Mattmy\ICalendar\Event::class, 'endsAt'],
+        [Mattmy\ICalendar\Event::class, 'allDay'],
+        [Mattmy\ICalendar\Event::class, 'startIsFloating'],
+        [Mattmy\ICalendar\Event::class, 'endIsFloating'],
+        [Mattmy\ICalendar\Event::class, 'lastDay'],
+        [Mattmy\ICalendar\Event::class, 'duration'],
+        [Mattmy\ICalendar\Event::class, 'attendees'],
+        [Mattmy\ICalendar\Event::class, 'alarms'],
+        [Mattmy\ICalendar\Event::class, 'categories'],
+        [Mattmy\ICalendar\Attendee::class, 'delegatedFrom'],
+        [Mattmy\ICalendar\Attendee::class, 'delegatedTo'],
+        [Mattmy\ICalendar\Alarm::class, 'attendees'],
+        [Mattmy\ICalendar\Alarm::class, 'duration'],
+    ];
+
+    foreach ($properties as [$class, $property]) {
+        $reflection = new ReflectionProperty($class, $property);
+
+        expect($reflection->getDocComment())
+            ->not->toBeFalse("{$class}::\${$property} must document its refined type or semantics.");
+    }
+});

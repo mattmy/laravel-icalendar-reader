@@ -8,14 +8,20 @@ use Carbon\CarbonImmutable;
 use DateInterval;
 use InvalidArgumentException;
 
-/** Represent one ordered iCalendar property without discarding values or parameters. */
+/**
+ * Represent one ordered iCalendar property without discarding values or parameters.
+ *
+ * @phpstan-type StructuredValue array<array-key, string|list<string>>
+ * @phpstan-type PropertyAtom bool|int|float|string|CarbonImmutable|DateInterval|StructuredValue
+ * @phpstan-type PropertyValue PropertyAtom|list<PropertyAtom>|null
+ */
 final readonly class Property
 {
     /**
      * Hydrate an immutable property snapshot from normalized parser data.
      *
-     * @param  bool|int|float|string|CarbonImmutable|DateInterval|list<bool|int|float|string|CarbonImmutable|DateInterval>|null  $value
-     * @param  list<bool|int|float|string|CarbonImmutable|DateInterval>  $values
+     * @param  PropertyValue  $value
+     * @param  list<PropertyAtom>  $values
      * @param  array<string, string|list<string>>  $parameterItems
      *
      * @internal
@@ -23,7 +29,9 @@ final readonly class Property
     public function __construct(
         public string $name,
         public string $type,
+        /** @var PropertyValue */
         public mixed $value,
+        /** @var list<PropertyAtom> */
         public array $values,
         private array $parameterItems,
         private string $rawValue,

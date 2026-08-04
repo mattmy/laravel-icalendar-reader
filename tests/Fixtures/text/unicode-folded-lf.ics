@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Mattmy//Text Interoperability//ZH-TW
+BEGIN:VEVENT
+uid:text@example.test
+dtstamp:20260801T000000Z
+dtstart:20260810T010000Z
+summary:繁體中文行事曆 📅
+description;language=zh-TW:這是一段需要折行的繁體中文與 emoji 📅 內容，
+ 第二行會接續在同一個 DESCRIPTION property。
+X-MATTMY-NOTE;X-LEVEL=測試:保留未知屬性
+END:VEVENT
+END:VCALENDAR

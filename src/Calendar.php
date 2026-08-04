@@ -16,9 +16,11 @@ use Sabre\VObject\Component\VCalendar;
  * Represent an immutable, queryable snapshot of one VCALENDAR document.
  *
  * @phpstan-type ParameterMap array<string, string|list<string>>
- * @phpstan-type PropertyAtom bool|int|float|string|\Carbon\CarbonImmutable|DateInterval
+ * @phpstan-type StructuredValue array<array-key, string|list<string>>
+ * @phpstan-type PropertyAtom bool|int|float|string|\Carbon\CarbonImmutable|DateInterval|StructuredValue
  * @phpstan-type PropertyValue PropertyAtom|list<PropertyAtom>|null
  * @phpstan-type PropertyArray array{name: string, type: string, value: PropertyValue, values: list<PropertyAtom>, parameters: ParameterMap, raw_value: string}
+ * @phpstan-type ComponentArray array{name: string, properties: list<PropertyArray>, components: list<array<string, mixed>>}
  * @phpstan-type IssueArray array{level: int, code: string, message: string, source: string, line: ?int, component: ?string, property: ?string}
  * @phpstan-type OrganizerArray array{address: string, email: ?string, name: ?string, sent_by: ?string, directory: ?string, parameters: ParameterMap}
  * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
@@ -232,7 +234,7 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Export the complete normalized component tree without collapsing repeated data.
      *
-     * @return array{name: string, properties: list<array<string, mixed>>, components: list<array<string, mixed>>}
+     * @return ComponentArray
      */
     public function toComponentArray(): array
     {
@@ -413,7 +415,7 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Convert a generic component tree without collapsing ordered data.
      *
-     * @return array{name: string, properties: list<array<string, mixed>>, components: list<array<string, mixed>>}
+     * @return ComponentArray
      */
     private function componentArray(Component $component): array
     {
@@ -435,10 +437,16 @@ final readonly class Calendar implements JsonSerializable
      */
     private function propertyArray(Property $property): array
     {
+        $value = match (\count($property->values)) {
+            0 => null,
+            1 => $property->values[0],
+            default => $property->values,
+        };
+
         return [
             'name' => $property->name,
             'type' => $property->type,
-            'value' => $property->value,
+            'value' => $value,
             'values' => $property->values,
             'parameters' => $this->parameterArray($property->parameters()),
             'raw_value' => $property->rawValue(),
