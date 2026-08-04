@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows Keep
 
 - Strict iCalendar parsing, full Sabre/VObject validation, and structured issues.
 - Typed Calendar, Event, Organizer, Attendee, Alarm, and AlarmTrigger APIs.
-- Optional exact `SUMMARY` filtering through `Calendar::events()`.
+- Optional exact UID filtering through `Calendar::events()`.
 - Readonly `Event::$allDay` access alongside `Event::isAllDay()`.
 - Generic Property and Component access for repeated, unknown, and non-event data.
 - Singular and presence queries for direct calendar components.

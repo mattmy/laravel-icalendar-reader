@@ -52,7 +52,7 @@ Every source uses the same strict parse and validation pipeline. Throwing method
 
 ```php
 $event = $calendar->event($uid);
-$reviews = $calendar->events('Architecture review');
+$occurrences = $calendar->events($uid);
 $events = $calendar->eventsBetween($from, $until);
 $freeBusy = $calendar->component('VFREEBUSY');
 $hasTodos = $calendar->hasComponent('VTODO');

@@ -29,9 +29,11 @@ exceptions.
 `eventsBetween()`, `properties()`, `hasProperty()`, `property()`,
 `components()`, `hasComponent()`, `component()`, and `warnings()`.
 
-Pass a summary to `events($eventName)` to return every exact, case-sensitive
-`SUMMARY` match in document order. Passing `null` returns all events; no match
-returns an empty Collection. `hasEvents($eventName)` uses the same rules.
+Pass a UID to `events($uid)` to return every exact, case-sensitive UID match in
+document order, including recurrence overrides. Passing `null` returns all
+events; no match returns an empty Collection. `hasEvents($uid)` uses the same
+rules, while `event($uid)` returns one event using the documented recurrence
+selection rules.
 
 `Event` exposes `uid`, `summary`, `description`, `location`, `startsAt`,
 `endsAt`, `lastDay`, `duration`, `timestamp`, `createdAt`, `lastModifiedAt`,

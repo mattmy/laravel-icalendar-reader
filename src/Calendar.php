@@ -53,29 +53,29 @@ final readonly class Calendar implements JsonSerializable
     ) {}
 
     /**
-     * Return events in document order, optionally filtered by exact summary.
+     * Return events in document order, optionally filtered by exact UID.
      *
      * @return Collection<int, Event>
      */
-    public function events(?string $eventName = null): Collection
+    public function events(?string $uid = null): Collection
     {
         $events = collect($this->eventItems);
 
-        if ($eventName === null) {
+        if ($uid === null) {
             return $events;
         }
 
         return $events
-            ->filter(static fn (Event $event): bool => $event->summary === $eventName)
+            ->filter(static fn (Event $event): bool => $event->uid === $uid)
             ->values();
     }
 
     /**
-     * Determine whether any event, or an exact summary match, exists.
+     * Determine whether any event, or an exact UID match, exists.
      */
-    public function hasEvents(?string $name = null): bool
+    public function hasEvents(?string $uid = null): bool
     {
-        return $this->events($name)->isNotEmpty();
+        return $this->events($uid)->isNotEmpty();
     }
 
     /**

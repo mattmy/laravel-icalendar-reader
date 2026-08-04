@@ -19,8 +19,8 @@ it('reads and validates a calendar through the facade', function () {
         ->and($calendar->productId)->toBe('-//Mattmy//Laravel iCalendar Reader Tests//EN')
         ->and($calendar->floatingTimezone)->toBe('Asia/Taipei')
         ->and($calendar->hasEvents())->toBeTrue()
-        ->and($calendar->hasEvents('Architecture review'))->toBeTrue()
-        ->and($calendar->hasEvents('architecture review'))->toBeFalse()
+        ->and($calendar->hasEvents('architecture-review@example.test'))->toBeTrue()
+        ->and($calendar->hasEvents('ARCHITECTURE-REVIEW@example.test'))->toBeFalse()
         ->and($calendar->hasEvents(''))->toBeFalse()
         ->and($event->uid)->toBe('architecture-review@example.test')
         ->and($event->summary)->toBe('Architecture review')
@@ -38,48 +38,45 @@ it('identifies all-day events from the DTSTART value type', function () {
         ->and($event->startsAt?->toDateString())->toBe('2026-08-03');
 });
 
-it('filters events by exact case-sensitive summary in document order', function () {
+it('filters events by exact case-sensitive UID in document order', function () {
     $calendar = ICalendar::read(<<<'ICS'
 BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Example//Event Filtering Tests//EN
 BEGIN:VEVENT
-UID:first@example.test
+UID:repeated@example.test
 DTSTAMP:20260801T000000Z
 DTSTART:20260803T010000Z
-SUMMARY:Repeated name
+RRULE:FREQ=DAILY;COUNT=2
+SUMMARY:Master event
 END:VEVENT
 BEGIN:VEVENT
-UID:second@example.test
+UID:repeated@example.test
 DTSTAMP:20260801T000000Z
-DTSTART:20260803T020000Z
-SUMMARY:Repeated name
+RECURRENCE-ID:20260804T010000Z
+DTSTART:20260804T020000Z
+SUMMARY:Moved occurrence
 END:VEVENT
 BEGIN:VEVENT
-UID:case@example.test
+UID:REPEATED@example.test
 DTSTAMP:20260801T000000Z
 DTSTART:20260803T030000Z
-SUMMARY:repeated name
-END:VEVENT
-BEGIN:VEVENT
-UID:missing@example.test
-DTSTAMP:20260801T000000Z
-DTSTART:20260803T040000Z
+SUMMARY:Case-sensitive UID
 END:VEVENT
 END:VCALENDAR
 ICS);
 
-    expect($calendar->events())->toHaveCount(4)
-        ->and($calendar->events(null))->toHaveCount(4)
-        ->and($calendar->events('Repeated name')->pluck('uid')->all())->toBe([
-            'first@example.test',
-            'second@example.test',
+    expect($calendar->events())->toHaveCount(3)
+        ->and($calendar->events(null))->toHaveCount(3)
+        ->and($calendar->events('repeated@example.test')->pluck('summary')->all())->toBe([
+            'Master event',
+            'Moved occurrence',
         ])
-        ->and($calendar->events('repeated name')->sole()->uid)->toBe('case@example.test')
-        ->and($calendar->events('Missing name'))->toBeEmpty()
+        ->and($calendar->events('REPEATED@example.test')->sole()->summary)->toBe('Case-sensitive UID')
+        ->and($calendar->events('missing@example.test'))->toBeEmpty()
         ->and($calendar->events(''))->toBeEmpty()
-        ->and($calendar->hasEvents('Repeated name'))->toBeTrue()
-        ->and($calendar->hasEvents('Missing name'))->toBeFalse();
+        ->and($calendar->hasEvents('repeated@example.test'))->toBeTrue()
+        ->and($calendar->hasEvents('missing@example.test'))->toBeFalse();
 });
 
 it('throws structured invalid calendar errors for syntax failures', function () {
