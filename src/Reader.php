@@ -299,7 +299,7 @@ final readonly class Reader
             $duration = new DateInterval('P1D');
             $endsAt = $startsAt->addDay();
         } elseif ($startsAt !== null && $endsAt !== null) {
-            $duration = $startsAt->diff($endsAt);
+            $duration = $startsAt->toDateTimeImmutable()->diff($endsAt->toDateTimeImmutable());
         }
 
         $attendees = \array_map(
