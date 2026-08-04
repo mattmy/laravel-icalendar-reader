@@ -94,3 +94,5 @@ $warnings = $calendar->warnings();
 ## 授權
 
 本套件使用 MIT License，詳見 [LICENSE](LICENSE)。
+
+完整 API、例外、時區及版本契約請參考[繁體中文指南](docs/zh-TW/guide/README.md)。

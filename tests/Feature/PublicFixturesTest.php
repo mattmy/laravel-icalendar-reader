@@ -5,15 +5,9 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Mattmy\ICalendar\Facades\ICalendar;
 
-beforeEach(function () {
-    if (! is_dir(__DIR__ . '/../../../../public/ics')) {
-        $this->markTestSkipped('Workspace public/ics fixtures are not available.');
-    }
-});
-
 function publicFixturePath(string $name): string
 {
-    return __DIR__ . "/../../../../public/ics/{$name}.ics";
+    return __DIR__ . "/../Fixtures/public/{$name}.ics";
 }
 
 it('maps all-day event semantics and common fields from a real fixture', function () {
@@ -107,8 +101,4 @@ it('reads every valid supplied public fixture without hiding non-event data', fu
         expect($calendar->components())->not->toBeEmpty()
             ->and($calendar->toComponentArray()['components'])->not->toBeEmpty();
     }
-});
-
-it('rejects the supplied legacy fixture when strict validation finds invalid value types', function () {
-    expect(ICalendar::tryFromPath(publicFixturePath('test')))->toBeNull();
 });

@@ -10,6 +10,7 @@ use Mattmy\ICalendar\Exceptions\CalendarFileUnreadable;
 use Mattmy\ICalendar\Exceptions\CalendarTooLarge;
 use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 
+/** Read supported input sources while enforcing an exact byte limit. */
 final class BoundedInputReader
 {
     private const int CHUNK_BYTES = 8192;
@@ -113,6 +114,7 @@ final class BoundedInputReader
     /**
      * Read a valid Laravel upload without trusting its client metadata.
      *
+     * @throws CalendarFileNotFound
      * @throws CalendarFileUnreadable
      * @throws CalendarTooLarge
      * @throws InvalidCalendarSource

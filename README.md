@@ -94,3 +94,6 @@ All inputs are limited by `icalendar_reader.max_bytes` before parsing. `fromPath
 ## License
 
 The MIT License. See [LICENSE](LICENSE).
+
+For the complete API, failure, timezone, and version contracts, see the
+[English guide](docs/guide/README.md).

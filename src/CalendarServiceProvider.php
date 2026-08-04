@@ -6,6 +6,7 @@ namespace Mattmy\ICalendar;
 
 use Illuminate\Support\ServiceProvider;
 
+/** Register the reader, configuration, and package publishing hooks with Laravel. */
 final class CalendarServiceProvider extends ServiceProvider
 {
     /**

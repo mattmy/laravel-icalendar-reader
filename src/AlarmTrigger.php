@@ -7,9 +7,14 @@ namespace Mattmy\ICalendar;
 use Carbon\CarbonImmutable;
 use DateInterval;
 
+/** Preserve whether a VALARM trigger is relative or absolute. */
 final readonly class AlarmTrigger
 {
-    /** @internal */
+    /**
+     * Hydrate exactly one relative or absolute trigger representation.
+     *
+     * @internal
+     */
     public function __construct(
         private ?DateInterval $relativeDuration,
         private ?CarbonImmutable $absoluteDateTime,

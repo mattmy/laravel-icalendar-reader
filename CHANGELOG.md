@@ -10,3 +10,6 @@ All notable changes to this project are documented here. The format follows Keep
 - Typed Calendar, Event, Organizer, Attendee, Alarm, and AlarmTrigger APIs.
 - Generic Property and Component access for repeated, unknown, and non-event data.
 - Safe string, path, stream, and UploadedFile input methods.
+- Mapping warnings for unresolved document timezones without silently applying UTC.
+- Complete PHPDoc contracts with an automated reflection guard.
+- Self-contained interoperability fixtures, bilingual guides, and a repeatable benchmark command.

@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar;
 
+/** Represent an immutable typed view of an ORGANIZER property. */
 final readonly class Organizer
 {
     /**
+     * Hydrate an organizer from one cal-address and its normalized parameters.
+     *
      * @param  array<string, string|list<string>>  $parameterItems
+     *
      * @internal
      */
     public function __construct(

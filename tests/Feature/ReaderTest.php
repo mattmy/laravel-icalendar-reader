@@ -20,6 +20,8 @@ it('reads and validates a calendar through the facade', function () {
         ->and($calendar->floatingTimezone)->toBe('Asia/Taipei')
         ->and($calendar->hasEvents())->toBeTrue()
         ->and($calendar->hasEvents('Architecture review'))->toBeTrue()
+        ->and($calendar->hasEvents('architecture review'))->toBeFalse()
+        ->and($calendar->hasEvents(''))->toBeFalse()
         ->and($event->uid)->toBe('architecture-review@example.test')
         ->and($event->summary)->toBe('Architecture review')
         ->and($event->startsAt)->toEqual(CarbonImmutable::parse('2026-08-03 06:30:00', 'UTC'))
@@ -42,6 +44,51 @@ it('throws structured invalid calendar errors for syntax failures', function () 
             ->and($exception->issues())->toHaveCount(1)
             ->and($exception->issues()->sole()->code)->toBe('parser_error')
             ->and($exception->issues()->sole()->source)->toBe('parser');
+
+        return;
+    }
+
+    $this->fail('Expected InvalidCalendar to be thrown.');
+});
+
+it('rejects a non-calendar root with a stable issue', function () {
+    try {
+        ICalendar::read(<<<'VCF'
+BEGIN:VCARD
+VERSION:4.0
+FN:Example Person
+N:Person;Example;;;
+END:VCARD
+VCF);
+    } catch (InvalidCalendar $exception) {
+        expect($exception->issues()->sole()->code)->toBe('invalid_root_component')
+            ->and($exception->issues()->sole()->source)->toBe('parser');
+
+        return;
+    }
+
+    $this->fail('Expected InvalidCalendar to be thrown.');
+});
+
+it('maps level three validation failures and keeps nullable behavior explicit', function () {
+    $contents = <<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:missing-dtstamp@example.test
+DTSTART:20260803T010000Z
+END:VEVENT
+END:VCALENDAR
+ICS;
+
+    try {
+        ICalendar::read($contents);
+    } catch (InvalidCalendar $exception) {
+        expect($exception->issues()->sole()->level)->toBe(3)
+            ->and($exception->issues()->sole()->code)->toBe('validation_error')
+            ->and($exception->issues()->sole()->source)->toBe('validator')
+            ->and(ICalendar::tryRead($contents))->toBeNull();
 
         return;
     }

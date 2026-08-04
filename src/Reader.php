@@ -11,21 +11,25 @@ use DateTimeZone;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Http\UploadedFile;
 use LogicException;
+use Mattmy\ICalendar\Exceptions\CalendarFileNotFound;
+use Mattmy\ICalendar\Exceptions\CalendarFileUnreadable;
 use Mattmy\ICalendar\Exceptions\CalendarTooLarge;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
+use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Support\BoundedInputReader;
+use Mattmy\ICalendar\Support\CalendarValidator;
 use Mattmy\ICalendar\Support\TimezoneResolver;
 use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
-use Sabre\VObject\Node;
-use Sabre\VObject\ParseException;
+use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
 use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
-use Sabre\VObject\Reader as SabreReader;
+use Sabre\VObject\TimeZoneUtil;
 
+/** Read, validate, and hydrate iCalendar input from explicit source types. */
 final readonly class Reader
 {
     /**
@@ -34,6 +38,7 @@ final readonly class Reader
     public function __construct(
         private Repository $config,
         private BoundedInputReader $inputReader,
+        private CalendarValidator $validator,
         private TimezoneResolver $timezoneResolver,
     ) {}
 
@@ -74,8 +79,8 @@ final readonly class Reader
     /**
      * Read and validate an iCalendar document from a local path.
      *
-     * @throws \Mattmy\ICalendar\Exceptions\CalendarFileNotFound
-     * @throws \Mattmy\ICalendar\Exceptions\CalendarFileUnreadable
+     * @throws CalendarFileNotFound
+     * @throws CalendarFileUnreadable
      * @throws CalendarTooLarge
      * @throws InvalidCalendar
      * @throws InvalidConfiguration
@@ -94,6 +99,11 @@ final readonly class Reader
 
     /**
      * Read a local path or return null only for invalid iCalendar data.
+     *
+     * @throws CalendarFileNotFound
+     * @throws CalendarFileUnreadable
+     * @throws CalendarTooLarge
+     * @throws InvalidConfiguration
      */
     public function tryFromPath(string $path): ?Calendar
     {
@@ -108,6 +118,12 @@ final readonly class Reader
      * Read and validate an iCalendar document from a caller-owned stream.
      *
      * @param  mixed  $stream
+     *
+     * @throws CalendarFileUnreadable
+     * @throws CalendarTooLarge
+     * @throws InvalidCalendar
+     * @throws InvalidCalendarSource
+     * @throws InvalidConfiguration
      */
     public function fromStream(mixed $stream): Calendar
     {
@@ -125,6 +141,11 @@ final readonly class Reader
      * Read a stream or return null only for invalid iCalendar data.
      *
      * @param  mixed  $stream
+     *
+     * @throws CalendarFileUnreadable
+     * @throws CalendarTooLarge
+     * @throws InvalidCalendarSource
+     * @throws InvalidConfiguration
      */
     public function tryFromStream(mixed $stream): ?Calendar
     {
@@ -137,6 +158,13 @@ final readonly class Reader
 
     /**
      * Read and validate a Laravel uploaded iCalendar file.
+     *
+     * @throws CalendarFileNotFound
+     * @throws CalendarFileUnreadable
+     * @throws CalendarTooLarge
+     * @throws InvalidCalendar
+     * @throws InvalidCalendarSource
+     * @throws InvalidConfiguration
      */
     public function fromUploadedFile(UploadedFile $file): Calendar
     {
@@ -152,6 +180,12 @@ final readonly class Reader
 
     /**
      * Read an upload or return null only for invalid iCalendar data.
+     *
+     * @throws CalendarFileNotFound
+     * @throws CalendarFileUnreadable
+     * @throws CalendarTooLarge
+     * @throws InvalidCalendarSource
+     * @throws InvalidConfiguration
      */
     public function tryFromUploadedFile(UploadedFile $file): ?Calendar
     {
@@ -174,51 +208,13 @@ final readonly class Reader
         string $floatingTimezone,
         array $configurationWarnings,
     ): Calendar {
-        try {
-            $document = SabreReader::read($contents, 0);
-        } catch (ParseException $exception) {
-            $issue = new CalendarIssue(
-                level: 3,
-                code: 'parser_error',
-                message: 'The contents could not be parsed as an iCalendar document.',
-                source: 'parser',
-            );
-
-            throw new InvalidCalendar(
-                message: 'The contents are not a valid iCalendar document.',
-                issues: [$issue],
-                previous: $exception,
-            );
-        }
-
-        if (! $document instanceof VCalendar) {
-            $issue = new CalendarIssue(
-                level: 3,
-                code: 'invalid_root_component',
-                message: 'The root component must be VCALENDAR.',
-                source: 'parser',
-                component: $document?->name,
-            );
-
-            throw new InvalidCalendar(
-                message: 'The contents are not a valid iCalendar document.',
-                issues: [$issue],
-            );
-        }
-
-        [$errors, $warnings] = $this->validationIssues($document);
-
-        if ($errors !== []) {
-            throw new InvalidCalendar(
-                message: 'The iCalendar document failed validation.',
-                issues: $errors,
-            );
-        }
+        $validated = $this->validator->validate($contents);
+        $document = $validated['calendar'];
 
         return $this->hydrateCalendar(
             component: $document,
             floatingTimezone: $floatingTimezone,
-            warnings: [...$configurationWarnings, ...$warnings],
+            warnings: [...$configurationWarnings, ...$validated['warnings'], ...$this->mappingIssues($document)],
         );
     }
 
@@ -238,55 +234,6 @@ final readonly class Reader
         }
 
         return $maxBytes;
-    }
-
-    /**
-     * Convert Sabre validation results to stable package issues.
-     *
-     * @return array{list<CalendarIssue>, list<CalendarIssue>}
-     */
-    private function validationIssues(VCalendar $calendar): array
-    {
-        $errors = [];
-        $warnings = [];
-
-        foreach ($calendar->validate() as $validationIssue) {
-            $level = (int) $validationIssue['level'];
-            $node = $validationIssue['node'];
-            $issue = $this->validationIssue(
-                level: $level,
-                message: (string) $validationIssue['message'],
-                node: $node,
-            );
-
-            if ($level >= 3) {
-                $errors[] = $issue;
-            } elseif ($level === 2) {
-                $warnings[] = $issue;
-            }
-        }
-
-        return [$errors, $warnings];
-    }
-
-    /**
-     * Create one stable issue from a structured Sabre validation result.
-     */
-    private function validationIssue(int $level, string $message, Node $node): CalendarIssue
-    {
-        $component = $node instanceof SabreComponent
-            ? $node->name
-            : ($node->parent instanceof SabreComponent ? $node->parent->name : null);
-        $property = $node instanceof SabreProperty ? $node->name : null;
-
-        return new CalendarIssue(
-            level: $level,
-            code: $level >= 3 ? 'validation_error' : 'validation_warning',
-            message: $message,
-            source: 'validator',
-            component: $component,
-            property: $property,
-        );
     }
 
     /**
@@ -513,6 +460,10 @@ final readonly class Reader
             return null;
         }
 
+        if (! $this->hasResolvableTimezone($property)) {
+            return null;
+        }
+
         $dateTime = $property->getDateTime(new DateTimeZone($floatingTimezone));
 
         return $dateTime === null ? null : CarbonImmutable::instance($dateTime);
@@ -720,6 +671,13 @@ final readonly class Reader
     private function propertyValues(SabreProperty $property, string $floatingTimezone): array
     {
         if ($property instanceof DateTimeProperty) {
+            if (! $this->hasResolvableTimezone($property)) {
+                return \array_values(\array_map(
+                    static fn (mixed $part): string => (string) $part,
+                    $property->getParts(),
+                ));
+            }
+
             return \array_values(\array_map(
                 static fn (DateTimeInterface|DateInterval $value): CarbonImmutable|DateInterval => $value instanceof DateTimeInterface ? CarbonImmutable::instance($value) : $value,
                 $property->getDateTimes(new DateTimeZone($floatingTimezone)),
@@ -743,5 +701,66 @@ final readonly class Reader
             },
             $property->getParts(),
         ));
+    }
+
+    /**
+     * Report date-time properties whose TZID cannot be resolved without guessing.
+     *
+     * @return list<CalendarIssue>
+     */
+    private function mappingIssues(SabreComponent $component): array
+    {
+        $issues = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof DateTimeProperty && ! $this->hasResolvableTimezone($child)) {
+                $issues[] = new CalendarIssue(
+                    level: 2,
+                    code: 'mapping_warning',
+                    message: 'A date-time property uses a TZID that could not be resolved reliably.',
+                    source: 'mapping',
+                    component: $component->name,
+                    property: $child->name,
+                );
+            } elseif ($child instanceof SabreComponent) {
+                $issues = [...$issues, ...$this->mappingIssues($child)];
+            }
+        }
+
+        return $issues;
+    }
+
+    /** Determine whether a date-time property has an exact or calendar-defined timezone. */
+    private function hasResolvableTimezone(DateTimeProperty $property): bool
+    {
+        $parameter = $property['TZID'];
+
+        if ($parameter === null) {
+            return true;
+        }
+
+        if (! $parameter instanceof Parameter) {
+            return false;
+        }
+
+        $timezone = $parameter->getValue();
+
+        if (! \is_string($timezone)) {
+            return false;
+        }
+
+        $root = $property->parent;
+
+        while ($root?->parent !== null) {
+            $root = $root->parent;
+        }
+
+        try {
+            TimeZoneUtil::getTimeZone($timezone, $root instanceof VCalendar ? $root : null, true);
+
+            return true;
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
     }
 }

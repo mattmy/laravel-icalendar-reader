@@ -126,3 +126,27 @@ it('exposes a configuration warning while reading a floating-time fixture', func
         ->and($warning->code)->toBe('invalid_timezone_configuration')
         ->and($warning->source)->toBe('configuration');
 });
+
+it('does not guess a timezone when TZID cannot be resolved', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:unknown-timezone@example.test
+DTSTAMP:20260803T000000Z
+DTSTART;TZID=Unknown/Zone:20260803T120000
+END:VEVENT
+END:VCALENDAR
+ICS);
+    $event = $calendar->events()->sole();
+    $warning = $calendar->warnings()->sole();
+
+    expect($event->startsAt)->toBeNull()
+        ->and($event->property('DTSTART')?->value)->toBe('20260803T120000')
+        ->and($warning->level)->toBe(2)
+        ->and($warning->code)->toBe('mapping_warning')
+        ->and($warning->source)->toBe('mapping')
+        ->and($warning->component)->toBe('VEVENT')
+        ->and($warning->property)->toBe('DTSTART');
+});

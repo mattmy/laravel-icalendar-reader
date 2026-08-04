@@ -51,6 +51,15 @@ it('validates property and component query names', function () {
         ->and(fn () => $component->properties("\t"))->toThrow(InvalidArgumentException::class);
 });
 
+it('supports presence queries without recursing into child components', function () {
+    $calendar = ICalendar::read(calendarFixture('freebusy'));
+
+    expect($calendar->hasProperty())->toBeTrue()
+        ->and($calendar->hasProperty('METHOD'))->toBeTrue()
+        ->and($calendar->hasProperty('FREEBUSY'))->toBeFalse()
+        ->and($calendar->components('VFREEBUSY')->sole()->hasProperty())->toBeTrue();
+});
+
 it('exports a normalized component tree without collapsing repeated properties', function () {
     $tree = ICalendar::read(calendarFixture('freebusy'))->toComponentArray();
     $freeBusy = $tree['components'][0];

@@ -9,9 +9,12 @@ use Mattmy\ICalendar\CalendarIssue;
 use RuntimeException;
 use Throwable;
 
+/** Report iCalendar parse, root-component, or level-three validation failures. */
 final class InvalidCalendar extends RuntimeException implements ICalendarException
 {
     /**
+     * Create an invalid-calendar exception with structured issues.
+     *
      * @param  list<CalendarIssue>  $issues
      */
     public function __construct(

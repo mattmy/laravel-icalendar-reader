@@ -6,10 +6,15 @@ namespace Mattmy\ICalendar;
 
 use JsonSerializable;
 
+/** Describe one structured parser, validator, configuration, or mapping issue. */
 final readonly class CalendarIssue implements JsonSerializable
 {
     /**
      * Create an immutable parser, validator, configuration, or mapping issue.
+     *
+     * @param  2|3  $level
+     * @param  'invalid_timezone_configuration'|'invalid_root_component'|'parser_error'|'validation_error'|'validation_warning'|'mapping_warning'  $code
+     * @param  'parser'|'validator'|'configuration'|'mapping'  $source
      */
     public function __construct(
         public int $level,

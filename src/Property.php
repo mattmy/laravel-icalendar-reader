@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar;
 
+use Carbon\CarbonImmutable;
+use DateInterval;
 use InvalidArgumentException;
 
+/** Represent one ordered iCalendar property without discarding values or parameters. */
 final readonly class Property
 {
     /**
-     * @param  list<mixed>  $values
+     * Hydrate an immutable property snapshot from normalized parser data.
+     *
+     * @param  bool|int|float|string|CarbonImmutable|DateInterval|list<bool|int|float|string|CarbonImmutable|DateInterval>|null  $value
+     * @param  list<bool|int|float|string|CarbonImmutable|DateInterval>  $values
      * @param  array<string, string|list<string>>  $parameterItems
+     *
      * @internal
      */
     public function __construct(
@@ -22,13 +29,23 @@ final readonly class Property
         private string $rawValue,
     ) {}
 
-    /** @return array<string, string|list<string>> */
+    /**
+     * Return every normalized parameter without discarding multi-value entries.
+     *
+     * @return array<string, string|list<string>>
+     */
     public function parameters(): array
     {
         return $this->parameterItems;
     }
 
-    /** @return string|list<string>|null */
+    /**
+     * Return a parameter by case-insensitive name.
+     *
+     * @return string|list<string>|null
+     *
+     * @throws InvalidArgumentException
+     */
     public function parameter(string $name): string|array|null
     {
         $name = self::normalizeName($name);
@@ -36,11 +53,17 @@ final readonly class Property
         return $this->parameterItems[$name] ?? null;
     }
 
+    /** Return Sabre's decoded but otherwise untyped property value. */
     public function rawValue(): string
     {
         return $this->rawValue;
     }
 
+    /**
+     * Normalize and validate a property or parameter name.
+     *
+     * @throws InvalidArgumentException
+     */
     private static function normalizeName(string $name): string
     {
         $name = \trim($name);

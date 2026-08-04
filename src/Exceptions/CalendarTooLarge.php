@@ -6,6 +6,7 @@ namespace Mattmy\ICalendar\Exceptions;
 
 use RuntimeException;
 
+/** Report input that exceeds the configured byte limit. */
 final class CalendarTooLarge extends RuntimeException implements ICalendarException
 {
     /**

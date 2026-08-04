@@ -10,6 +10,8 @@ use Mattmy\ICalendar\Calendar;
 use Mattmy\ICalendar\Reader;
 
 /**
+ * Provide static access to the same Reader instance available through dependency injection.
+ *
  * @method static Calendar read(string $contents)
  * @method static Calendar|null tryRead(string $contents)
  * @method static Calendar fromPath(string $path)

@@ -8,12 +8,30 @@ use DateInterval;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
+use JsonException;
 use JsonSerializable;
 use Sabre\VObject\Component\VCalendar;
 
+/**
+ * Represent an immutable, queryable snapshot of one VCALENDAR document.
+ *
+ * @phpstan-type ParameterMap array<string, string|list<string>>
+ * @phpstan-type PropertyAtom bool|int|float|string|\Carbon\CarbonImmutable|DateInterval
+ * @phpstan-type PropertyValue PropertyAtom|list<PropertyAtom>|null
+ * @phpstan-type PropertyArray array{name: string, type: string, value: PropertyValue, values: list<PropertyAtom>, parameters: ParameterMap, raw_value: string}
+ * @phpstan-type IssueArray array{level: int, code: string, message: string, source: string, line: ?int, component: ?string, property: ?string}
+ * @phpstan-type OrganizerArray array{address: string, email: ?string, name: ?string, sent_by: ?string, directory: ?string, parameters: ParameterMap}
+ * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
+ * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
+ * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, repeat: ?int, duration: ?string}
+ * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>}
+ * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, warnings: list<IssueArray>}
+ */
 final readonly class Calendar implements JsonSerializable
 {
     /**
+     * Hydrate an immutable calendar snapshot and its ordered child data.
+     *
      * @param  list<Event>  $eventItems
      * @param  list<CalendarIssue>  $warningItems
      * @param  list<Property>  $propertyItems
@@ -125,7 +143,13 @@ final readonly class Calendar implements JsonSerializable
         return collect($this->warningItems);
     }
 
-    /** @return Collection<int, Property> */
+    /**
+     * Return direct calendar properties, optionally filtered case-insensitively by name.
+     *
+     * @return Collection<int, Property>
+     *
+     * @throws InvalidArgumentException
+     */
     public function properties(?string $name = null): Collection
     {
         if ($name === null) {
@@ -139,17 +163,33 @@ final readonly class Calendar implements JsonSerializable
             ->values();
     }
 
+    /**
+     * Determine whether any direct property, or a named direct property, exists.
+     *
+     * @throws InvalidArgumentException
+     */
     public function hasProperty(?string $name = null): bool
     {
         return $this->properties($name)->isNotEmpty();
     }
 
+    /**
+     * Return the first direct property matching a case-insensitive name.
+     *
+     * @throws InvalidArgumentException
+     */
     public function property(string $name): ?Property
     {
         return $this->properties($name)->first();
     }
 
-    /** @return Collection<int, Component> */
+    /**
+     * Return direct child components, optionally filtered case-insensitively by name.
+     *
+     * @return Collection<int, Component>
+     *
+     * @throws InvalidArgumentException
+     */
     public function components(?string $name = null): Collection
     {
         if ($name === null) {
@@ -171,7 +211,11 @@ final readonly class Calendar implements JsonSerializable
         return clone $this->component;
     }
 
-    /** @return array{name: string, properties: list<mixed>, components: list<mixed>} */
+    /**
+     * Export the complete normalized component tree without collapsing repeated data.
+     *
+     * @return array{name: string, properties: list<array<string, mixed>>, components: list<array<string, mixed>>}
+     */
     public function toComponentArray(): array
     {
         return [
@@ -190,7 +234,7 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Convert the calendar to its current domain-oriented representation.
      *
-     * @return array<string, mixed>
+     * @return CalendarArray
      */
     public function toArray(): array
     {
@@ -214,14 +258,18 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Return data suitable for JSON encoding.
      *
-     * @return array<string, mixed>
+     * @return CalendarArray
      */
     public function jsonSerialize(): array
     {
         return $this->toArray();
     }
 
-    /** Encode the domain-oriented representation as JSON. */
+    /**
+     * Encode the domain-oriented representation as JSON with throwing error semantics.
+     *
+     * @throws JsonException
+     */
     public function toJson(int $options = 0): string
     {
         return \json_encode($this->toArray(), $options | JSON_THROW_ON_ERROR);
@@ -230,7 +278,7 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Convert one event for the Calendar output contract.
      *
-     * @return array<string, mixed>
+     * @return EventArray
      */
     private function eventArray(Event $event): array
     {
@@ -255,16 +303,16 @@ final readonly class Calendar implements JsonSerializable
             'sequence' => $event->sequence,
             'url' => $event->url,
             'organizer' => $event->organizer === null ? null : $this->organizerArray($event->organizer),
-            'attendees' => $event->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->values()->all(),
-            'alarms' => $event->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->values()->all(),
-            'categories' => $event->categories->values()->all(),
+            'attendees' => \array_values($event->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
+            'alarms' => \array_values($event->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
+            'categories' => \array_values($event->categories->all()),
         ];
     }
 
     /**
      * Convert an organizer for the Calendar output contract.
      *
-     * @return array<string, mixed>
+     * @return OrganizerArray
      */
     private function organizerArray(Organizer $organizer): array
     {
@@ -274,14 +322,14 @@ final readonly class Calendar implements JsonSerializable
             'name' => $organizer->name,
             'sent_by' => $organizer->sentBy,
             'directory' => $organizer->directory,
-            'parameters' => $organizer->parameters(),
+            'parameters' => $this->parameterArray($organizer->parameters()),
         ];
     }
 
     /**
      * Convert an attendee for the Calendar output contract.
      *
-     * @return array<string, mixed>
+     * @return AttendeeArray
      */
     private function attendeeArray(Attendee $attendee): array
     {
@@ -293,16 +341,16 @@ final readonly class Calendar implements JsonSerializable
             'status' => $attendee->status,
             'rsvp' => $attendee->rsvp,
             'type' => $attendee->type,
-            'delegated_from' => $attendee->delegatedFrom->values()->all(),
-            'delegated_to' => $attendee->delegatedTo->values()->all(),
-            'parameters' => $attendee->parameters(),
+            'delegated_from' => \array_values($attendee->delegatedFrom->all()),
+            'delegated_to' => \array_values($attendee->delegatedTo->all()),
+            'parameters' => $this->parameterArray($attendee->parameters()),
         ];
     }
 
     /**
      * Convert an alarm for the Calendar output contract.
      *
-     * @return array<string, mixed>
+     * @return AlarmArray
      */
     private function alarmArray(Alarm $alarm): array
     {
@@ -317,7 +365,7 @@ final readonly class Calendar implements JsonSerializable
             ],
             'description' => $alarm->description,
             'summary' => $alarm->summary,
-            'attendees' => $alarm->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->values()->all(),
+            'attendees' => \array_values($alarm->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
             'repeat' => $alarm->repeat,
             'duration' => self::durationString($alarm->duration),
         ];
@@ -365,7 +413,7 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Convert a property without collapsing its values or parameters.
      *
-     * @return array{name: string, type: string, value: mixed, values: list<mixed>, parameters: array<string, string|list<string>>, raw_value: string}
+     * @return PropertyArray
      */
     private function propertyArray(Property $property): array
     {
@@ -374,11 +422,16 @@ final readonly class Calendar implements JsonSerializable
             'type' => $property->type,
             'value' => $property->value,
             'values' => $property->values,
-            'parameters' => $property->parameters(),
+            'parameters' => $this->parameterArray($property->parameters()),
             'raw_value' => $property->rawValue(),
         ];
     }
 
+    /**
+     * Normalize and validate an iCalendar property or component name.
+     *
+     * @throws InvalidArgumentException
+     */
     private function normalizeName(string $name, string $kind): string
     {
         $name = \trim($name);
@@ -388,5 +441,16 @@ final readonly class Calendar implements JsonSerializable
         }
 
         return \strtoupper($name);
+    }
+
+    /**
+     * Normalize parameter list keys for the fixed serialization contract.
+     *
+     * @param  array<string, string|list<string>>  $parameters
+     * @return array<string, string|list<string>>
+     */
+    private function parameterArray(array $parameters): array
+    {
+        return $parameters;
     }
 }

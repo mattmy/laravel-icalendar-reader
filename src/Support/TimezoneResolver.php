@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar\Support;
 use Illuminate\Contracts\Config\Repository;
 use Mattmy\ICalendar\CalendarIssue;
 
+/** Resolve the effective floating timezone without trusting invalid configuration. */
 final readonly class TimezoneResolver
 {
     /**

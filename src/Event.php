@@ -10,6 +10,7 @@ use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Sabre\VObject\Component\VEvent;
 
+/** Represent an immutable typed view of one VEVENT component. */
 final readonly class Event
 {
     /**
@@ -25,10 +26,15 @@ final readonly class Event
         public ?string $description,
         public ?string $location,
         public ?CarbonImmutable $startsAt,
+        /** The exclusive event end; all-day DTEND is never reduced by one day. */
         public ?CarbonImmutable $endsAt,
+        /** Whether DTSTART has DATE or floating DATE-TIME semantics. */
         public bool $startIsFloating,
+        /** Whether DTEND, or its derived value, has floating semantics. */
         public bool $endIsFloating,
+        /** The inclusive final calendar date for all-day events only. */
         public ?CarbonImmutable $lastDay,
+        /** The effective duration; this mutable value is isolated from parser state. */
         public ?DateInterval $duration,
         public ?CarbonImmutable $timestamp,
         public ?CarbonImmutable $createdAt,
@@ -66,7 +72,13 @@ final readonly class Event
         return clone $this->component;
     }
 
-    /** @return Collection<int, Property> */
+    /**
+     * Return direct event properties, optionally filtered case-insensitively by name.
+     *
+     * @return Collection<int, Property>
+     *
+     * @throws InvalidArgumentException
+     */
     public function properties(?string $name = null): Collection
     {
         if ($name === null) {
@@ -84,11 +96,21 @@ final readonly class Event
             ->values();
     }
 
+    /**
+     * Determine whether any direct property, or a named direct property, exists.
+     *
+     * @throws InvalidArgumentException
+     */
     public function hasProperty(?string $name = null): bool
     {
         return $this->properties($name)->isNotEmpty();
     }
 
+    /**
+     * Return the first direct property matching a case-insensitive name.
+     *
+     * @throws InvalidArgumentException
+     */
     public function property(string $name): ?Property
     {
         return $this->properties($name)->first();

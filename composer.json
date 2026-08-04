@@ -66,6 +66,7 @@
             "@format:check",
             "composer audit"
         ],
+        "benchmark": "php tests/Benchmark/read.php",
         "format": "pint",
         "format:check": "pint --test",
         "test": "pest"
