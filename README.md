@@ -2,9 +2,24 @@
 
 [繁體中文](README.zh-TW.md)
 
-Read, validate, and query `.ics` calendars through a clean, typed Laravel API. Sabre/VObject handles RFC parsing while this package provides immutable Laravel-friendly objects, Collections, structured errors, and safe input boundaries.
+Read `.ics` calendars with a Laravel-friendly API. Get events, dates, all-day status,
+organizers, attendees, alarms, properties, and components without working with raw
+iCalendar text.
 
-> The package is under active 0.x development. The public API may change before 1.0.
+## What you can do
+
+- Read `.ics` content from a string, local file, stream, or Laravel uploaded file.
+- Get all events or find events by UID and date range.
+- Read event dates, duration, location, status, categories, and other common fields.
+- Check whether an event is all day with `$event->allDay` or `$event->isAllDay()`.
+- Get organizers, attendees, delegation details, alarms, and alarm triggers.
+- Read `VTODO`, `VJOURNAL`, `VFREEBUSY`, `VTIMEZONE`, custom properties, and unknown components.
+- Choose whether invalid calendar content throws an exception or returns `null`.
+- Get readable warnings for calendar content that needs attention.
+- Convert calendar data to an array, JSON, or a complete component tree.
+
+This package reads calendars only. It does not generate `.ics` files or expand recurring
+events into individual occurrences.
 
 ## Installation
 
@@ -12,32 +27,25 @@ Read, validate, and query `.ics` calendars through a clean, typed Laravel API. S
 composer require mattmy/laravel-icalendar-reader
 ```
 
-Laravel discovers the service provider and `ICalendar` facade automatically. To publish the optional configuration:
-
-```bash
-php artisan vendor:publish --tag=icalendar-reader-config
-```
-
 ## Quick start
 
 ```php
 use Mattmy\ICalendar\Facades\ICalendar;
 
-$calendar = ICalendar::read($contents);
+$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
 
 foreach ($calendar->events() as $event) {
-    $event->summary;
-    $event->startsAt;
-    $event->endsAt;
-    $event->allDay;
-    $event->isAllDay();
-    $event->organizer;
-    $event->attendees;
-    $event->alarms;
+    echo $event->summary;
+    echo $event->startsAt?->toDateTimeString();
+    echo $event->endsAt?->toDateTimeString();
+
+    if ($event->allDay) {
+        echo 'All day';
+    }
 }
 ```
 
-Read from an iCalendar string, local path, caller-owned stream, or Laravel `UploadedFile`:
+## Read `.ics` content
 
 ```php
 $calendar = ICalendar::read($contents);
@@ -46,73 +54,83 @@ $calendar = ICalendar::fromStream($stream);
 $calendar = ICalendar::fromUploadedFile($request->file('calendar'));
 ```
 
-Every source uses the same strict parse and validation pipeline. Throwing methods raise `InvalidCalendar` for invalid content; matching `try*()` methods return `null` only for invalid content. File, stream, upload, size, and configuration failures remain exceptions.
-
-## Query and preserve data
+Use the matching `try*()` method when invalid calendar content should return `null`:
 
 ```php
-$event = $calendar->event($uid);
-$occurrences = $calendar->events($uid);
-$events = $calendar->eventsBetween($from, $until);
-$freeBusy = $calendar->component('VFREEBUSY');
-$hasTodos = $calendar->hasComponent('VTODO');
-$periods = $freeBusy?->properties('FREEBUSY');
-$fbType = $periods?->first()?->parameter('FBTYPE');
-
-$calendar->toArray();          // Domain-oriented output
-$calendar->toJson();           // JSON_THROW_ON_ERROR
-$calendar->toComponentArray(); // Complete normalized component tree
+$calendar = ICalendar::tryRead($contents);
+$calendar = ICalendar::tryFromPath($path);
+$calendar = ICalendar::tryFromStream($stream);
+$calendar = ICalendar::tryFromUploadedFile($request->file('calendar'));
 ```
 
-Repeated properties, parameters, multi-values, recurrence properties, `VTODO`, `VJOURNAL`, `VFREEBUSY`, `VTIMEZONE`, vendor properties, and unknown components remain accessible through `Property` and generic `Component` objects.
+File, stream, upload, size, and configuration errors still throw their matching exceptions.
 
-## Typed fields
+## Work with events
 
-`Collection<int, T>` means a Laravel Collection whose values are `T`. Date-times are
-`CarbonImmutable`; durations are `DateInterval`.
+```php
+$events = $calendar->events();
+$eventsWithUid = $calendar->events('event@example.com');
+$event = $calendar->event('event@example.com');
+$hasEvents = $calendar->hasEvents();
+$hasEvent = $calendar->hasEvents('event@example.com');
+$eventsInRange = $calendar->eventsBetween($from, $until);
+```
 
-| Event property | Type | Meaning |
-| --- | --- | --- |
-| `uid`, `summary`, `description`, `location`, `status`, `classification`, `url` | `?string` | Common VEVENT text fields. |
-| `startsAt`, `endsAt` | `?CarbonImmutable` | Start and exclusive end; `endsAt` may be derived from `DURATION`. |
-| `allDay` | `bool` | True only when `DTSTART` has the `DATE` value type. |
-| `startIsFloating`, `endIsFloating` | `bool` | Whether the corresponding value has floating/date semantics. |
-| `lastDay` | `?CarbonImmutable` | Inclusive final date for all-day events only. |
-| `duration` | `?DateInterval` | Effective event duration. |
-| `timestamp`, `createdAt`, `lastModifiedAt` | `?CarbonImmutable` | `DTSTAMP`, `CREATED`, and `LAST-MODIFIED`. |
-| `priority`, `sequence` | `?int` | Numeric VEVENT metadata. |
-| `organizer` | `?Organizer` | Parsed organizer. |
-| `attendees` | `Collection<int, Attendee>` | All attendees in document order. |
-| `alarms` | `Collection<int, Alarm>` | All direct `VALARM` children. |
-| `categories` | `Collection<int, string>` | Decoded category values. |
+An `Event` gives you:
 
-| Organizer property | Type | Meaning |
-| --- | --- | --- |
-| `address` | `string` | Original organizer address, including its scheme. |
-| `email`, `name`, `sentBy`, `directory` | `?string` | Normalized common values; all parameters remain available through `parameters()`. |
+- `uid`, `summary`, `description`, `location`, and `url`
+- `startsAt`, `endsAt`, `lastDay`, and `duration`
+- `allDay`, `startIsFloating`, and `endIsFloating`
+- `status`, `classification`, `priority`, and `sequence`
+- `timestamp`, `createdAt`, and `lastModifiedAt`
+- `organizer`, `attendees`, `alarms`, and `categories`
 
-| Attendee property | Type | Meaning |
-| --- | --- | --- |
-| `address` | `string` | Original attendee address. |
-| `email`, `name`, `role`, `status`, `type` | `?string` | Common attendee metadata. |
-| `rsvp` | `?bool` | Parsed RSVP value. |
-| `delegatedFrom`, `delegatedTo` | `Collection<int, string>` | Every delegation address. |
+Dates are returned as `CarbonImmutable`, durations as `DateInterval`, and lists as Laravel
+Collections. `eventsBetween()` returns events found in the `.ics` file; recurring rules are
+not expanded into extra occurrences.
 
-| Alarm property | Type | Meaning |
-| --- | --- | --- |
-| `action`, `description`, `summary` | `?string` | Common VALARM fields. |
-| `trigger` | `?AlarmTrigger` | Relative duration or absolute date-time trigger. |
-| `attendees` | `Collection<int, Attendee>` | Alarm attendees. |
-| `repeat` | `?int` | Repeat count. |
-| `duration` | `?DateInterval` | Delay between repeats. |
+## Organizers, attendees, and alarms
 
-## Time semantics
+```php
+$organizer = $event->organizer;
+$organizer?->email;
+$organizer?->name;
 
-- UTC and `TZID` date-times retain their timezone.
-- Floating values use `icalendar_reader.floating_timezone`, then `app.timezone`.
-- Invalid timezone configuration falls back to UTC and creates a Calendar warning.
-- `allDay` and `isAllDay()` expose the same `DTSTART` value-type check instead of guessing from midnight or duration.
-- All-day `DTEND` remains exclusive; `lastDay` provides the inclusive convenience date.
+foreach ($event->attendees as $attendee) {
+    $attendee->email;
+    $attendee->name;
+    $attendee->role;
+    $attendee->status;
+    $attendee->rsvp;
+}
+
+foreach ($event->alarms as $alarm) {
+    $alarm->action;
+    $alarm->description;
+    $alarm->trigger?->duration();
+    $alarm->trigger?->dateTime();
+}
+```
+
+## Properties and components
+
+Use properties and components when the data you need does not have a dedicated Event field.
+
+```php
+$summaryProperty = $event->property('SUMMARY');
+$rules = $event->properties('RRULE');
+$hasLocation = $event->hasProperty('LOCATION');
+
+$freeBusy = $calendar->component('VFREEBUSY');
+$todos = $calendar->components('VTODO');
+$hasTimezones = $calendar->hasComponent('VTIMEZONE');
+
+$periods = $freeBusy?->properties('FREEBUSY');
+$busyType = $periods?->first()?->parameter('FBTYPE');
+```
+
+Property and component names are not case-sensitive. `property()` and `component()` return
+the first match; `properties()` and `components()` return every match.
 
 ## Validation and warnings
 
@@ -128,23 +146,29 @@ try {
 $warnings = $calendar->warnings();
 ```
 
-## Limits and security
+Use `issues()` when invalid content is rejected. Use `warnings()` after a successful read to
+find content or configuration that may need attention.
 
-The package does not generate calendars, download remote URLs, implement CalDAV, persist data, or expand recurrence occurrences. `eventsBetween()` only queries concrete `VEVENT` components present in the document.
+## Arrays and JSON
 
-All inputs are limited by `icalendar_reader.max_bytes` before parsing. `fromPath()` accepts readable local regular files only, streams remain owned by the caller, and errors do not include complete calendar contents. Calendar data can contain personal information; avoid logging raw input or full parsed output by default.
+```php
+$data = $calendar->toArray();
+$json = $calendar->toJson(JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+$tree = $calendar->toComponentArray();
+```
 
-## Upgrading
+`toArray()` and `toJson()` contain common calendar and event data. `toComponentArray()`
+contains the complete property and component tree, including non-event and custom data.
 
-During 0.x development, minor releases may contain breaking public API or fixed-output
-changes. Review [CHANGELOG.md](CHANGELOG.md), keep an appropriate Composer constraint,
-and run your calendar fixture and serialization tests before upgrading. From 1.0 onward,
-public APIs, documented date semantics, exception classes, and fixed array keys follow
-Semantic Versioning; new warning codes may be added in minor releases.
+## Limits and safety
+
+Input size is limited by `icalendar_reader.max_bytes`. Calendar fields may contain personal
+or user-provided text and URLs, so escape displayed text, check links before using them, and
+avoid logging complete calendar contents.
+
+For every method, field, parameter, exception, timezone note, and performance consideration,
+see the [documentation](https://mattmy.github.io/laravel-icalendar-reader-doc/).
 
 ## License
 
 The MIT License. See [LICENSE](LICENSE).
-
-For the complete API, failure, timezone, and version contracts, see the
-[English guide](docs/guide/README.md).

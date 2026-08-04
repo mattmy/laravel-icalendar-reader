@@ -2,9 +2,23 @@
 
 [English](README.md)
 
-透過簡潔、具型別的 Laravel API 讀取、驗證及查詢 `.ics`。底層由 Sabre/VObject 處理 RFC parsing，套件則提供唯讀物件、Collection、結構化錯誤與安全輸入邊界。英文文件是權威版本。
+透過符合 Laravel 使用習慣的 API 讀取 `.ics` 行事曆。你可以直接取得事件、日期、
+全天狀態、主辦人、參與者、提醒、properties 與 components，不必自己處理原始
+iCalendar 文字。
 
-> 套件目前仍是 0.x 開發版本，公開 API 在 1.0 前可能調整。
+## 可以做什麼
+
+- 從字串、本機檔案、stream 或 Laravel 上傳檔案讀取 `.ics`。
+- 取得全部事件，或依 UID、日期範圍查詢事件。
+- 取得事件日期、持續時間、地點、狀態、分類及其他常用欄位。
+- 使用 `$event->allDay` 或 `$event->isAllDay()` 確認是否為全天事件。
+- 取得主辦人、參與者、委派資料、提醒及提醒時間。
+- 讀取 `VTODO`、`VJOURNAL`、`VFREEBUSY`、`VTIMEZONE`、自訂欄位及未知 components。
+- 自己選擇不合法內容要拋出例外或回傳 `null`。
+- 取得行事曆中需要留意的警告。
+- 將行事曆轉成 array、JSON 或完整的 component 階層。
+
+本套件只負責讀取，不會產生 `.ics`，也不會把重複事件展開成每一次發生的事件。
 
 ## 安裝
 
@@ -12,32 +26,25 @@
 composer require mattmy/laravel-icalendar-reader
 ```
 
-Laravel 會自動發現 Service Provider 與 `ICalendar` Facade。需要調整設定時可發布設定檔：
-
-```bash
-php artisan vendor:publish --tag=icalendar-reader-config
-```
-
 ## 快速開始
 
 ```php
 use Mattmy\ICalendar\Facades\ICalendar;
 
-$calendar = ICalendar::read($contents);
+$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
 
 foreach ($calendar->events() as $event) {
-    $event->summary;
-    $event->startsAt;
-    $event->endsAt;
-    $event->allDay;
-    $event->isAllDay();
-    $event->organizer;
-    $event->attendees;
-    $event->alarms;
+    echo $event->summary;
+    echo $event->startsAt?->toDateTimeString();
+    echo $event->endsAt?->toDateTimeString();
+
+    if ($event->allDay) {
+        echo '全天';
+    }
 }
 ```
 
-支援 iCalendar 字串、本機路徑、由呼叫端管理的 stream 與 Laravel `UploadedFile`：
+## 讀取 `.ics`
 
 ```php
 $calendar = ICalendar::read($contents);
@@ -46,73 +53,82 @@ $calendar = ICalendar::fromStream($stream);
 $calendar = ICalendar::fromUploadedFile($request->file('calendar'));
 ```
 
-所有來源都使用相同的嚴格解析與驗證管線。Throwing methods 遇到不合法內容會拋出 `InvalidCalendar`；對應的 `try*()` 只在內容不合法時回傳 `null`。檔案、stream、upload、大小及設定錯誤仍會拋出例外。
-
-## 查詢與完整資料
+不合法內容希望回傳 `null` 時，使用對應的 `try*()` 方法：
 
 ```php
-$event = $calendar->event($uid);
-$occurrences = $calendar->events($uid);
-$events = $calendar->eventsBetween($from, $until);
-$freeBusy = $calendar->component('VFREEBUSY');
-$hasTodos = $calendar->hasComponent('VTODO');
-$periods = $freeBusy?->properties('FREEBUSY');
-$fbType = $periods?->first()?->parameter('FBTYPE');
-
-$calendar->toArray();
-$calendar->toJson();
-$calendar->toComponentArray();
+$calendar = ICalendar::tryRead($contents);
+$calendar = ICalendar::tryFromPath($path);
+$calendar = ICalendar::tryFromStream($stream);
+$calendar = ICalendar::tryFromUploadedFile($request->file('calendar'));
 ```
 
-重複 properties、parameters、多值、recurrence properties、`VTODO`、`VJOURNAL`、`VFREEBUSY`、`VTIMEZONE`、廠商欄位及未知 components，都會保留在 `Property` 與 generic `Component` API。
+檔案、stream、upload、大小及設定錯誤仍會拋出對應例外。
 
-## Typed 欄位
+## 使用事件資料
 
-`Collection<int, T>` 代表內容為 `T` 的 Laravel Collection。日期時間使用
-`CarbonImmutable`，duration 使用 `DateInterval`。
+```php
+$events = $calendar->events();
+$eventsWithUid = $calendar->events('event@example.com');
+$event = $calendar->event('event@example.com');
+$hasEvents = $calendar->hasEvents();
+$hasEvent = $calendar->hasEvents('event@example.com');
+$eventsInRange = $calendar->eventsBetween($from, $until);
+```
 
-| Event property | 型別 | 語意 |
-| --- | --- | --- |
-| `uid`, `summary`, `description`, `location`, `status`, `classification`, `url` | `?string` | 常見 VEVENT 文字欄位。 |
-| `startsAt`, `endsAt` | `?CarbonImmutable` | 開始與 exclusive 結束；`endsAt` 可能由 `DURATION` 推導。 |
-| `allDay` | `bool` | 只有 `DTSTART` value type 為 `DATE` 時才是 `true`。 |
-| `startIsFloating`, `endIsFloating` | `bool` | 對應值是否具有 floating/date 語意。 |
-| `lastDay` | `?CarbonImmutable` | 僅全天事件提供的 inclusive 最後日期。 |
-| `duration` | `?DateInterval` | 事件的 effective duration。 |
-| `timestamp`, `createdAt`, `lastModifiedAt` | `?CarbonImmutable` | `DTSTAMP`、`CREATED` 與 `LAST-MODIFIED`。 |
-| `priority`, `sequence` | `?int` | VEVENT 數值 metadata。 |
-| `organizer` | `?Organizer` | 解析後的 organizer。 |
-| `attendees` | `Collection<int, Attendee>` | 依文件順序保留所有 attendees。 |
-| `alarms` | `Collection<int, Alarm>` | 所有 direct `VALARM` children。 |
-| `categories` | `Collection<int, string>` | 解碼後的 category values。 |
+`Event` 可以取得：
 
-| Organizer property | 型別 | 語意 |
-| --- | --- | --- |
-| `address` | `string` | 包含 scheme 的原始 organizer address。 |
-| `email`, `name`, `sentBy`, `directory` | `?string` | 常用正規化值；所有 parameters 仍可由 `parameters()` 取得。 |
+- `uid`、`summary`、`description`、`location`、`url`
+- `startsAt`、`endsAt`、`lastDay`、`duration`
+- `allDay`、`startIsFloating`、`endIsFloating`
+- `status`、`classification`、`priority`、`sequence`
+- `timestamp`、`createdAt`、`lastModifiedAt`
+- `organizer`、`attendees`、`alarms`、`categories`
 
-| Attendee property | 型別 | 語意 |
-| --- | --- | --- |
-| `address` | `string` | 原始 attendee address。 |
-| `email`, `name`, `role`, `status`, `type` | `?string` | 常見 attendee metadata。 |
-| `rsvp` | `?bool` | 解析後的 RSVP 值。 |
-| `delegatedFrom`, `delegatedTo` | `Collection<int, string>` | 所有 delegation addresses。 |
+日期使用 `CarbonImmutable`，持續時間使用 `DateInterval`，多筆資料使用 Laravel
+Collection。`eventsBetween()` 只回傳 `.ics` 內實際存在的事件，不會額外展開重複規則。
 
-| Alarm property | 型別 | 語意 |
-| --- | --- | --- |
-| `action`, `description`, `summary` | `?string` | 常見 VALARM 欄位。 |
-| `trigger` | `?AlarmTrigger` | 相對 duration 或絕對日期時間 trigger。 |
-| `attendees` | `Collection<int, Attendee>` | Alarm attendees。 |
-| `repeat` | `?int` | 重複次數。 |
-| `duration` | `?DateInterval` | 每次重複之間的間隔。 |
+## 主辦人、參與者與提醒
 
-## 時間語意
+```php
+$organizer = $event->organizer;
+$organizer?->email;
+$organizer?->name;
 
-- UTC 與帶 `TZID` 的日期時間會保留時區。
-- Floating time 依序使用 `icalendar_reader.floating_timezone` 與 `app.timezone`。
-- 無效時區設定會 fallback 至 UTC，並在 Calendar 產生 warning。
-- `allDay` 與 `isAllDay()` 提供相同的 `DTSTART` value type 判斷，不以午夜或 duration 猜測。
-- 全天 `DTEND` 保持 exclusive；`lastDay` 提供 inclusive convenience date。
+foreach ($event->attendees as $attendee) {
+    $attendee->email;
+    $attendee->name;
+    $attendee->role;
+    $attendee->status;
+    $attendee->rsvp;
+}
+
+foreach ($event->alarms as $alarm) {
+    $alarm->action;
+    $alarm->description;
+    $alarm->trigger?->duration();
+    $alarm->trigger?->dateTime();
+}
+```
+
+## Properties 與 components
+
+需要的資料沒有專用 Event 欄位時，可以從 properties 與 components 取得。
+
+```php
+$summaryProperty = $event->property('SUMMARY');
+$rules = $event->properties('RRULE');
+$hasLocation = $event->hasProperty('LOCATION');
+
+$freeBusy = $calendar->component('VFREEBUSY');
+$todos = $calendar->components('VTODO');
+$hasTimezones = $calendar->hasComponent('VTIMEZONE');
+
+$periods = $freeBusy?->properties('FREEBUSY');
+$busyType = $periods?->first()?->parameter('FBTYPE');
+```
+
+Property 與 component 名稱不區分大小寫。`property()`、`component()` 取得第一筆；
+`properties()`、`components()` 取得所有符合的資料。
 
 ## 驗證與警告
 
@@ -128,22 +144,28 @@ try {
 $warnings = $calendar->warnings();
 ```
 
+內容不合法而被拒絕時，可由 `issues()` 取得原因。成功讀取後，可由 `warnings()` 取得
+仍需留意的內容或設定問題。
+
+## Array 與 JSON
+
+```php
+$data = $calendar->toArray();
+$json = $calendar->toJson(JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+$tree = $calendar->toComponentArray();
+```
+
+`toArray()` 與 `toJson()` 包含常用 Calendar 與 Event 資料；`toComponentArray()` 包含
+完整的 property 與 component 階層，也包含非事件及自訂資料。
+
 ## 限制與安全
 
-套件不產生 calendar、不下載遠端 URL、不實作 CalDAV、不儲存資料，也不展開 recurrence occurrences。`eventsBetween()` 只查詢文件中實際存在的 `VEVENT`。
+輸入大小受 `icalendar_reader.max_bytes` 限制。行事曆欄位可能包含個人資料、使用者提供
+的文字與 URL，因此顯示前應做好輸出轉義、使用連結前先檢查，也應避免記錄完整內容。
 
-所有輸入在解析前都受 `icalendar_reader.max_bytes` 限制。`fromPath()` 只接受可讀取的本機一般檔案，stream 仍由呼叫端管理，錯誤訊息不包含完整 calendar。Calendar 可能包含個人資料，預設不應記錄原始輸入或完整解析輸出。
-
-## 升級
-
-在 0.x 開發期間，minor release 可能包含公開 API 或固定輸出的 breaking change。
-升級前請檢查 [CHANGELOG.md](CHANGELOG.md)、使用合適的 Composer constraint，並執行
-應用程式自己的 calendar fixture 與 serialization tests。1.0 之後，公開 API、已記錄
-的日期語意、例外類別與固定 array keys 遵循 Semantic Versioning；minor release
-仍可能新增 warning code。
+所有方法、欄位、參數、例外、時區及效能注意事項請參考
+[完整文件](https://mattmy.github.io/laravel-icalendar-reader-doc/zh-TW/)。
 
 ## 授權
 
 本套件使用 MIT License，詳見 [LICENSE](LICENSE)。
-
-完整 API、例外、時區及版本契約請參考[繁體中文指南](docs/zh-TW/guide/README.md)。
