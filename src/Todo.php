@@ -60,6 +60,25 @@ final readonly class Todo
         public Collection $categories,
         /** @var Collection<int, Alarm> */
         public Collection $alarms,
+        /** @var array{latitude: float, longitude: float}|null */
+        public ?array $geo,
+        /** @var Collection<int, string> */
+        public Collection $comments,
+        /** @var Collection<int, string> */
+        public Collection $contacts,
+        /** @var Collection<int, string> */
+        public Collection $resources,
+        public ?Property $recurrenceRule,
+        /** @var Collection<int, Property> */
+        public Collection $attachments,
+        /** @var Collection<int, Property> */
+        public Collection $exceptionDates,
+        /** @var Collection<int, Property> */
+        public Collection $requestStatuses,
+        /** @var Collection<int, Property> */
+        public Collection $relatedTo,
+        /** @var Collection<int, Property> */
+        public Collection $recurrenceDates,
         private array $propertyItems,
         private VTodo $component,
     ) {}
