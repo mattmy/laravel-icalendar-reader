@@ -299,10 +299,10 @@ final readonly class Reader
         $startProperty = $this->firstProperty($component, 'DTSTART');
         $endProperty = $this->firstProperty($component, 'DTEND');
         $durationProperty = $this->firstProperty($component, 'DURATION');
+        $recurrenceIdProperty = $this->firstProperty($component, 'RECURRENCE-ID');
         $startsAt = $this->dateTimeValue($startProperty, $floatingTimezone);
         $endsAt = $this->dateTimeValue($endProperty, $floatingTimezone);
-        $allDay = $startProperty instanceof DateTimeProperty
-            && $startProperty->getValueType() === 'DATE';
+        $allDay = $this->isDate($startProperty);
         $duration = $durationProperty instanceof DurationProperty
             ? $durationProperty->getDateInterval()
             : null;
@@ -316,18 +316,6 @@ final readonly class Reader
             $duration = $startsAt->toDateTimeImmutable()->diff($endsAt->toDateTimeImmutable());
         }
 
-        $attendees = \array_map(
-            fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
-            $this->directProperties($component, 'ATTENDEE'),
-        );
-        $alarms = [];
-
-        foreach ($component->children() as $child) {
-            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
-                $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
-            }
-        }
-
         return new Event(
             uid: $this->stringProperty($component, 'UID'),
             summary: $this->stringProperty($component, 'SUMMARY'),
@@ -335,6 +323,10 @@ final readonly class Reader
             location: $this->stringProperty($component, 'LOCATION'),
             startsAt: $startsAt,
             endsAt: $endsAt,
+            startIsDate: $this->isDate($startProperty),
+            endIsDate: $endProperty === null && $endsAt !== null
+                ? $this->isDate($startProperty)
+                : $this->isDate($endProperty),
             startIsFloating: $this->isFloating($startProperty),
             endIsFloating: $endProperty === null && $endsAt !== null
                 ? $this->isFloating($startProperty)
@@ -347,13 +339,16 @@ final readonly class Reader
             status: $this->upperStringProperty($component, 'STATUS'),
             classification: $this->upperStringProperty($component, 'CLASS'),
             priority: $this->integerProperty($component, 'PRIORITY'),
+            recurrenceId: $this->dateTimeValue($recurrenceIdProperty, $floatingTimezone),
+            recurrenceIdIsDate: $this->isDate($recurrenceIdProperty),
+            recurrenceIdIsFloating: $this->isFloating($recurrenceIdProperty),
             sequence: $this->integerProperty($component, 'SEQUENCE'),
             url: $this->stringProperty($component, 'URL'),
             organizer: ($organizer = $this->firstProperty($component, 'ORGANIZER')) === null
                 ? null
                 : $this->hydrateOrganizer($organizer),
-            attendees: collect($attendees),
-            alarms: collect($alarms),
+            attendees: $this->hydrateAttendees($component),
+            alarms: $this->hydrateAlarms($component, $floatingTimezone),
             categories: collect($this->stringValues($component, 'CATEGORIES')),
             allDay: $allDay,
             propertyItems: $this->hydrateProperties($component, $floatingTimezone),
@@ -378,18 +373,6 @@ final readonly class Reader
             $dueAt = $startsAt->add($duration);
         } elseif ($duration === null && $startsAt !== null && $dueAt !== null) {
             $duration = $startsAt->toDateTimeImmutable()->diff($dueAt->toDateTimeImmutable());
-        }
-
-        $attendees = \array_map(
-            fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
-            $this->directProperties($component, 'ATTENDEE'),
-        );
-        $alarms = [];
-
-        foreach ($component->children() as $child) {
-            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
-                $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
-            }
         }
 
         return new Todo(
@@ -424,9 +407,9 @@ final readonly class Reader
             status: $this->upperStringProperty($component, 'STATUS'),
             summary: $this->stringProperty($component, 'SUMMARY'),
             url: $this->stringProperty($component, 'URL'),
-            attendees: collect($attendees),
+            attendees: $this->hydrateAttendees($component),
             categories: collect($this->stringValues($component, 'CATEGORIES')),
-            alarms: collect($alarms),
+            alarms: $this->hydrateAlarms($component, $floatingTimezone),
             propertyItems: $this->hydrateProperties($component, $floatingTimezone),
             component: clone $component,
         );
@@ -470,6 +453,37 @@ final readonly class Reader
             delegatedTo: collect($this->parameterList($parameters, 'DELEGATED-TO')),
             parameterItems: $parameters,
         );
+    }
+
+    /**
+     * Hydrate direct attendees while preserving their document order.
+     *
+     * @return \Illuminate\Support\Collection<int, Attendee>
+     */
+    private function hydrateAttendees(SabreComponent $component): \Illuminate\Support\Collection
+    {
+        return collect(\array_map(
+            fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
+            $this->directProperties($component, 'ATTENDEE'),
+        ));
+    }
+
+    /**
+     * Hydrate direct VALARM children while preserving their document order.
+     *
+     * @return \Illuminate\Support\Collection<int, Alarm>
+     */
+    private function hydrateAlarms(SabreComponent $component, string $floatingTimezone): \Illuminate\Support\Collection
+    {
+        $alarms = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
+                $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
+            }
+        }
+
+        return collect($alarms);
     }
 
     /** Hydrate one VALARM and its typed trigger. */

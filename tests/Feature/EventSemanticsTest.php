@@ -10,6 +10,8 @@ it('derives an exclusive one-day end for an all-day event without an explicit en
 
     expect($event->startIsFloating)->toBeTrue()
         ->and($event->endIsFloating)->toBeTrue()
+        ->and($event->startIsDate)->toBeTrue()
+        ->and($event->endIsDate)->toBeTrue()
         ->and($event->endsAt?->toDateString())->toBe('2026-08-04')
         ->and($event->lastDay?->toDateString())->toBe('2026-08-03')
         ->and($event->duration?->d)->toBe(1);
@@ -33,6 +35,8 @@ ICS);
 
     expect($event->allDay)->toBeFalse()
         ->and($event->isAllDay())->toBe($event->allDay)
+        ->and($event->startIsDate)->toBeFalse()
+        ->and($event->endIsDate)->toBeFalse()
         ->and($event->startIsFloating)->toBeTrue()
         ->and($event->endIsFloating)->toBeTrue()
         ->and($event->startsAt?->timezoneName)->toBe('Asia/Taipei');
@@ -150,4 +154,82 @@ ICS);
         ->and($warning->source)->toBe('mapping')
         ->and($warning->component)->toBe('VEVENT')
         ->and($warning->property)->toBe('DTSTART');
+});
+
+it('maps Event DATE and recurrence flags with the same semantics as Todo', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:recurrence@example.test
+DTSTAMP:20260803T000000Z
+DTSTART;VALUE=DATE:20260803
+DTEND;VALUE=DATE:20260804
+SUMMARY:Master event
+END:VEVENT
+BEGIN:VEVENT
+UID:recurrence@example.test
+DTSTAMP:20260803T000000Z
+DTSTART;VALUE=DATE:20260810
+RECURRENCE-ID;VALUE=DATE:20260810
+SUMMARY:Override event
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    $override = $calendar->events('recurrence@example.test')->last();
+    $output = $calendar->toArray()['events'][1];
+
+    expect($calendar->event('recurrence@example.test')?->summary)->toBe('Master event')
+        ->and($override?->startIsDate)->toBeTrue()
+        ->and($override?->endIsDate)->toBeTrue()
+        ->and($override?->recurrenceId?->toDateString())->toBe('2026-08-10')
+        ->and($override?->recurrenceIdIsDate)->toBeTrue()
+        ->and($override?->recurrenceIdIsFloating)->toBeTrue()
+        ->and($output)->toHaveKeys([
+            'start_is_date', 'end_is_date', 'recurrence_id', 'recurrence_id_is_date',
+            'recurrence_id_is_floating',
+        ])
+        ->and($output['starts_at'])->toBe('2026-08-10')
+        ->and($output['recurrence_id'])->toBe('2026-08-10');
+});
+
+it('hydrates matching attendees and alarms for Event and Todo through the shared mapping path', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:event-relations@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+ATTENDEE;CN=Taylor;ROLE=REQ-PARTICIPANT:mailto:taylor@example.test
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-PT15M
+DESCRIPTION:Reminder
+END:VALARM
+END:VEVENT
+BEGIN:VTODO
+UID:todo-relations@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+ATTENDEE;CN=Taylor;ROLE=REQ-PARTICIPANT:mailto:taylor@example.test
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-PT15M
+DESCRIPTION:Reminder
+END:VALARM
+END:VTODO
+END:VCALENDAR
+ICS);
+
+    $event = $calendar->events()->sole();
+    $todo = $calendar->todos()->sole();
+
+    expect($event->attendees->sole()->parameters())->toBe($todo->attendees->sole()->parameters())
+        ->and($event->alarms->sole()->trigger?->duration()?->i)
+        ->toBe($todo->alarms->sole()->trigger?->duration()?->i)
+        ->and($event->alarms->sole()->action)->toBe($todo->alarms->sole()->action);
 });

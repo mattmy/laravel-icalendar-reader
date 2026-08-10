@@ -24,7 +24,7 @@ use Sabre\VObject\Component\VCalendar;
  * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
  * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
  * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, repeat: ?int, duration: ?string}
- * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>}
+ * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>}
  * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>}
  * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, warnings: list<IssueArray>}
  */
@@ -354,8 +354,10 @@ final readonly class Calendar implements JsonSerializable
             'summary' => $event->summary,
             'description' => $event->description,
             'location' => $event->location,
-            'starts_at' => $event->startsAt?->toIso8601String(),
-            'ends_at' => $event->endsAt?->toIso8601String(),
+            'starts_at' => self::dateTimeString($event->startsAt, $event->startIsDate),
+            'ends_at' => self::dateTimeString($event->endsAt, $event->endIsDate),
+            'start_is_date' => $event->startIsDate,
+            'end_is_date' => $event->endIsDate,
             'start_is_floating' => $event->startIsFloating,
             'end_is_floating' => $event->endIsFloating,
             'is_all_day' => $event->allDay,
@@ -367,6 +369,9 @@ final readonly class Calendar implements JsonSerializable
             'status' => $event->status,
             'classification' => $event->classification,
             'priority' => $event->priority,
+            'recurrence_id' => self::dateTimeString($event->recurrenceId, $event->recurrenceIdIsDate),
+            'recurrence_id_is_date' => $event->recurrenceIdIsDate,
+            'recurrence_id_is_floating' => $event->recurrenceIdIsFloating,
             'sequence' => $event->sequence,
             'url' => $event->url,
             'organizer' => $event->organizer === null ? null : $this->organizerArray($event->organizer),
