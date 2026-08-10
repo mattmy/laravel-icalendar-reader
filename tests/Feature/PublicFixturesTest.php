@@ -76,16 +76,23 @@ it('keeps recurrence data and selects the master while querying concrete events'
         ->and($events->sole()->summary)->toContain('延後');
 });
 
-it('keeps non-event components and emits the fixed domain and normalized outputs', function () {
+it('maps VTODO fields and emits the fixed domain and normalized outputs', function () {
     $todoCalendar = ICalendar::fromPath(publicFixturePath('04-todo-task'));
-    $todo = $todoCalendar->components('VTODO')->sole();
+    $todo = $todoCalendar->todos()->sole();
 
     expect($todoCalendar->events())->toBeEmpty()
+        ->and($todoCalendar->hasTodos())->toBeTrue()
+        ->and($todo->percentComplete)->toBe(45)
+        ->and($todo->startsAt?->timezoneName)->toBe('UTC')
+        ->and($todo->dueAt?->toIso8601String())->toBe('2026-08-07T09:00:00+00:00')
+        ->and($todo->duration?->days)->toBe(6)
+        ->and($todo->alarms)->toHaveCount(1)
         ->and($todo->property('PERCENT-COMPLETE')?->value)->toBe(45)
-        ->and($todo->components('VALARM'))->toHaveCount(1);
+        ->and($todoCalendar->components('VTODO')->sole()->components('VALARM'))->toHaveCount(1);
 
     $calendar = ICalendar::fromPath(publicFixturePath('02-timezone-meeting-with-alarm'));
-    $event = $calendar->toArray()['events'][0];
+    $output = $calendar->toArray();
+    $event = $output['events'][0];
 
     expect($event)->toHaveKeys([
         'uid', 'summary', 'description', 'location', 'starts_at', 'ends_at',
@@ -93,6 +100,7 @@ it('keeps non-event components and emits the fixed domain and normalized outputs
         'timestamp', 'created_at', 'last_modified_at', 'status', 'classification',
         'priority', 'sequence', 'url', 'organizer', 'attendees', 'alarms', 'categories',
     ])->not->toHaveKey('all_day')
+        ->and($output['todos'])->toBe([])
         ->and(json_decode($calendar->toJson(), true, flags: JSON_THROW_ON_ERROR))
         ->toBe($calendar->toArray());
 });

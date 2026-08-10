@@ -14,6 +14,7 @@ use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Organizer;
 use Mattmy\ICalendar\Reader;
+use Mattmy\ICalendar\Todo;
 
 it('resolves one shared reader through Laravel and the facade', function () {
     expect(app(Reader::class))->toBe(app(Reader::class))
@@ -52,6 +53,7 @@ it('keeps domain models final and readonly', function (string $class) {
 })->with([
     Calendar::class,
     Event::class,
+    Todo::class,
     Component::class,
     CalendarIssue::class,
     Organizer::class,
@@ -65,6 +67,7 @@ it('does not expose uncommitted standalone serializers on nested domain models',
         ->and(method_exists($class, 'jsonSerialize'))->toBeFalse();
 })->with([
     Event::class,
+    Todo::class,
     Component::class,
     Organizer::class,
     Attendee::class,

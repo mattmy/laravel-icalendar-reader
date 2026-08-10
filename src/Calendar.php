@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar;
 
+use Carbon\CarbonImmutable;
 use DateInterval;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
@@ -24,7 +25,8 @@ use Sabre\VObject\Component\VCalendar;
  * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
  * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, repeat: ?int, duration: ?string}
  * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>}
- * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, warnings: list<IssueArray>}
+ * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>}
+ * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, warnings: list<IssueArray>}
  */
 final readonly class Calendar implements JsonSerializable
 {
@@ -32,6 +34,7 @@ final readonly class Calendar implements JsonSerializable
      * Hydrate an immutable calendar snapshot and its ordered child data.
      *
      * @param  list<Event>  $eventItems
+     * @param  list<Todo>  $todoItems
      * @param  list<CalendarIssue>  $warningItems
      * @param  list<Property>  $propertyItems
      * @param  list<Component>  $componentItems
@@ -45,6 +48,7 @@ final readonly class Calendar implements JsonSerializable
         public ?string $calendarScale,
         public string $floatingTimezone,
         private array $eventItems,
+        private array $todoItems,
         private array $warningItems,
         private array $propertyItems,
         private array $componentItems,
@@ -90,6 +94,48 @@ final readonly class Calendar implements JsonSerializable
 
                 if (! $event->hasProperty('RECURRENCE-ID')) {
                     return $event;
+                }
+            }
+        }
+
+        return $firstMatch;
+    }
+
+    /**
+     * Return todos in document order, optionally filtered by exact UID.
+     *
+     * @return Collection<int, Todo>
+     */
+    public function todos(?string $uid = null): Collection
+    {
+        $todos = collect($this->todoItems);
+
+        if ($uid === null) {
+            return $todos;
+        }
+
+        return $todos
+            ->filter(static fn (Todo $todo): bool => $todo->uid === $uid)
+            ->values();
+    }
+
+    /** Determine whether any todo, or an exact UID match, exists. */
+    public function hasTodos(?string $uid = null): bool
+    {
+        return $this->todos($uid)->isNotEmpty();
+    }
+
+    /** Find a todo by its exact, case-sensitive UID. */
+    public function todo(string $uid): ?Todo
+    {
+        $firstMatch = null;
+
+        foreach ($this->todoItems as $todo) {
+            if ($todo->uid === $uid) {
+                $firstMatch ??= $todo;
+
+                if (! $todo->hasProperty('RECURRENCE-ID')) {
+                    return $todo;
                 }
             }
         }
@@ -265,6 +311,10 @@ final readonly class Calendar implements JsonSerializable
                 fn (Event $event): array => $this->eventArray($event),
                 $this->eventItems,
             ),
+            'todos' => \array_map(
+                fn (Todo $todo): array => $this->todoArray($todo),
+                $this->todoItems,
+            ),
             'warnings' => \array_map(
                 static fn (CalendarIssue $issue): array => $issue->toArray(),
                 $this->warningItems,
@@ -323,6 +373,45 @@ final readonly class Calendar implements JsonSerializable
             'attendees' => \array_values($event->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
             'alarms' => \array_values($event->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
             'categories' => \array_values($event->categories->all()),
+        ];
+    }
+
+    /**
+     * Convert one todo for the Calendar output contract.
+     *
+     * @return TodoArray
+     */
+    private function todoArray(Todo $todo): array
+    {
+        return [
+            'uid' => $todo->uid,
+            'timestamp' => $todo->timestamp?->toIso8601String(),
+            'classification' => $todo->classification,
+            'completed_at' => $todo->completedAt?->toIso8601String(),
+            'created_at' => $todo->createdAt?->toIso8601String(),
+            'description' => $todo->description,
+            'starts_at' => self::dateTimeString($todo->startsAt, $todo->startIsDate),
+            'start_is_date' => $todo->startIsDate,
+            'start_is_floating' => $todo->startIsFloating,
+            'due_at' => self::dateTimeString($todo->dueAt, $todo->dueIsDate),
+            'due_is_date' => $todo->dueIsDate,
+            'due_is_floating' => $todo->dueIsFloating,
+            'duration' => self::durationString($todo->duration),
+            'last_modified_at' => $todo->lastModifiedAt?->toIso8601String(),
+            'location' => $todo->location,
+            'organizer' => $todo->organizer === null ? null : $this->organizerArray($todo->organizer),
+            'percent_complete' => $todo->percentComplete,
+            'priority' => $todo->priority,
+            'recurrence_id' => self::dateTimeString($todo->recurrenceId, $todo->recurrenceIdIsDate),
+            'recurrence_id_is_date' => $todo->recurrenceIdIsDate,
+            'recurrence_id_is_floating' => $todo->recurrenceIdIsFloating,
+            'sequence' => $todo->sequence,
+            'status' => $todo->status,
+            'summary' => $todo->summary,
+            'url' => $todo->url,
+            'attendees' => \array_values($todo->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
+            'categories' => \array_values($todo->categories->all()),
+            'alarms' => \array_values($todo->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
         ];
     }
 
@@ -407,6 +496,16 @@ final readonly class Calendar implements JsonSerializable
         }
 
         return ($duration->invert ? '-' : '') . 'P' . $date . ($time === '' ? '' : 'T' . $time);
+    }
+
+    /** Format a date-only or date-time value for the public output contract. */
+    private static function dateTimeString(?CarbonImmutable $value, bool $isDate): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return $isDate ? $value->toDateString() : $value->toIso8601String();
     }
 
     /**
