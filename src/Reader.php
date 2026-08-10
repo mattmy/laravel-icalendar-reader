@@ -748,7 +748,7 @@ final readonly class Reader
         foreach ($component->children() as $child) {
             if ($child instanceof DateTimeProperty && ! $this->hasResolvableTimezone($child)) {
                 $issues[] = new CalendarIssue(
-                    level: 2,
+                    level: CalendarIssue::LEVEL_WARNING,
                     code: 'mapping_warning',
                     message: 'A date-time property uses a TZID that could not be resolved reliably.',
                     source: 'mapping',

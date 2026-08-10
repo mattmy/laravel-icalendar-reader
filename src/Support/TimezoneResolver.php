@@ -64,7 +64,7 @@ final readonly class TimezoneResolver
     private function invalidTimezoneIssue(string $key): CalendarIssue
     {
         return new CalendarIssue(
-            level: 2,
+            level: CalendarIssue::LEVEL_WARNING,
             code: 'invalid_timezone_configuration',
             message: "The {$key} configuration is not a valid IANA timezone; UTC fallback rules were applied.",
             source: 'configuration',

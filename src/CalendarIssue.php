@@ -9,10 +9,14 @@ use JsonSerializable;
 /** Describe one structured parser, validator, configuration, or mapping issue. */
 final readonly class CalendarIssue implements JsonSerializable
 {
+    public const int LEVEL_WARNING = 2;
+
+    public const int LEVEL_ERROR = 3;
+
     /**
      * Create an immutable parser, validator, configuration, or mapping issue.
      *
-     * @param  2|3  $level
+     * @param  self::LEVEL_WARNING|self::LEVEL_ERROR  $level
      * @param  'invalid_timezone_configuration'|'invalid_root_component'|'parser_error'|'validation_error'|'validation_warning'|'mapping_warning'  $code
      * @param  'parser'|'validator'|'configuration'|'mapping'  $source
      */
