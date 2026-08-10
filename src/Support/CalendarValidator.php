@@ -30,7 +30,7 @@ final class CalendarValidator
         } catch (ParseException $exception) {
             throw new InvalidCalendar(
                 message: 'The contents are not a valid iCalendar document.',
-                issues: [new CalendarIssue(3, 'parser_error', 'The contents could not be parsed as an iCalendar document.', 'parser')],
+                issues: [new CalendarIssue(CalendarIssue::LEVEL_ERROR, 'parser_error', 'The contents could not be parsed as an iCalendar document.', 'parser')],
                 previous: $exception,
             );
         }
@@ -38,7 +38,7 @@ final class CalendarValidator
         if (! $document instanceof VCalendar) {
             throw new InvalidCalendar(
                 message: 'The contents are not a valid iCalendar document.',
-                issues: [new CalendarIssue(3, 'invalid_root_component', 'The root component must be VCALENDAR.', 'parser', component: $document?->name)],
+                issues: [new CalendarIssue(CalendarIssue::LEVEL_ERROR, 'invalid_root_component', 'The root component must be VCALENDAR.', 'parser', component: $document?->name)],
             );
         }
 
@@ -49,9 +49,9 @@ final class CalendarValidator
             $level = (int) $validationIssue['level'];
             $issue = $this->issue($level, (string) $validationIssue['message'], $validationIssue['node']);
 
-            if ($level >= 3) {
+            if ($level >= CalendarIssue::LEVEL_ERROR) {
                 $errors[] = $issue;
-            } elseif ($level === 2) {
+            } elseif ($level === CalendarIssue::LEVEL_WARNING) {
                 $warnings[] = $issue;
             }
         }
@@ -66,14 +66,16 @@ final class CalendarValidator
     /** Create one stable issue from a structured Sabre validation result. */
     private function issue(int $level, string $message, Node $node): CalendarIssue
     {
-        $normalizedLevel = $level >= 3 ? 3 : 2;
+        $normalizedLevel = $level >= CalendarIssue::LEVEL_ERROR
+            ? CalendarIssue::LEVEL_ERROR
+            : CalendarIssue::LEVEL_WARNING;
         $component = $node instanceof SabreComponent
             ? $node->name
             : ($node->parent instanceof SabreComponent ? $node->parent->name : null);
 
         return new CalendarIssue(
             level: $normalizedLevel,
-            code: $normalizedLevel === 3 ? 'validation_error' : 'validation_warning',
+            code: $normalizedLevel === CalendarIssue::LEVEL_ERROR ? 'validation_error' : 'validation_warning',
             message: $message,
             source: 'validator',
             component: $component,

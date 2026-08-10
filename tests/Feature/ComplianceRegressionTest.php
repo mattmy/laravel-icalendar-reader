@@ -182,9 +182,11 @@ it('isolates raw child component clones from hydrated and subsequent raw data', 
 
 it('keeps calendar and issue serialization contracts stable', function () {
     $calendar = ICalendar::read(calendarFixture('basic-event'));
-    $issue = new CalendarIssue(2, 'mapping_warning', 'Example', 'mapping', 12, 'VEVENT', 'DTSTART');
+    $issue = new CalendarIssue(CalendarIssue::LEVEL_WARNING, 'mapping_warning', 'Example', 'mapping', 12, 'VEVENT', 'DTSTART');
 
-    expect($calendar->jsonSerialize())->toBe($calendar->toArray())
+    expect(CalendarIssue::LEVEL_WARNING)->toBe(2)
+        ->and(CalendarIssue::LEVEL_ERROR)->toBe(3)
+        ->and($calendar->jsonSerialize())->toBe($calendar->toArray())
         ->and(\json_decode($calendar->toJson(JSON_PRETTY_PRINT), true, flags: JSON_THROW_ON_ERROR))
         ->toBe($calendar->toArray())
         ->and($issue->jsonSerialize())->toBe($issue->toArray())
