@@ -23,6 +23,7 @@ use Mattmy\ICalendar\Support\TimezoneResolver;
 use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\Component\VTodo;
 use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
@@ -252,10 +253,17 @@ final readonly class Reader
         array $warnings,
     ): Calendar {
         $events = [];
+        $todos = [];
 
         foreach ($component->select('VEVENT') as $eventComponent) {
             if ($eventComponent instanceof VEvent) {
                 $events[] = $this->hydrateEvent($eventComponent, $floatingTimezone);
+            }
+        }
+
+        foreach ($component->select('VTODO') as $todoComponent) {
+            if ($todoComponent instanceof VTodo) {
+                $todos[] = $this->hydrateTodo($todoComponent, $floatingTimezone);
             }
         }
 
@@ -275,6 +283,7 @@ final readonly class Reader
             calendarScale: $this->stringProperty($component, 'CALSCALE'),
             floatingTimezone: $floatingTimezone,
             eventItems: $events,
+            todoItems: $todos,
             warningItems: $warnings,
             propertyItems: $properties,
             componentItems: $components,
@@ -347,6 +356,77 @@ final readonly class Reader
             alarms: collect($alarms),
             categories: collect($this->stringValues($component, 'CATEGORIES')),
             allDay: $allDay,
+            propertyItems: $this->hydrateProperties($component, $floatingTimezone),
+            component: clone $component,
+        );
+    }
+
+    /** Hydrate one todo without exposing the mutable Sabre component. */
+    private function hydrateTodo(VTodo $component, string $floatingTimezone): Todo
+    {
+        $startProperty = $this->firstProperty($component, 'DTSTART');
+        $dueProperty = $this->firstProperty($component, 'DUE');
+        $durationProperty = $this->firstProperty($component, 'DURATION');
+        $recurrenceIdProperty = $this->firstProperty($component, 'RECURRENCE-ID');
+        $startsAt = $this->dateTimeValue($startProperty, $floatingTimezone);
+        $dueAt = $this->dateTimeValue($dueProperty, $floatingTimezone);
+        $duration = $durationProperty instanceof DurationProperty
+            ? $durationProperty->getDateInterval()
+            : null;
+
+        if ($dueProperty === null && $startsAt !== null && $duration !== null) {
+            $dueAt = $startsAt->add($duration);
+        } elseif ($duration === null && $startsAt !== null && $dueAt !== null) {
+            $duration = $startsAt->toDateTimeImmutable()->diff($dueAt->toDateTimeImmutable());
+        }
+
+        $attendees = \array_map(
+            fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
+            $this->directProperties($component, 'ATTENDEE'),
+        );
+        $alarms = [];
+
+        foreach ($component->children() as $child) {
+            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
+                $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
+            }
+        }
+
+        return new Todo(
+            uid: $this->stringProperty($component, 'UID'),
+            timestamp: $this->dateTimeValue($this->firstProperty($component, 'DTSTAMP'), $floatingTimezone),
+            classification: $this->upperStringProperty($component, 'CLASS'),
+            completedAt: $this->dateTimeValue($this->firstProperty($component, 'COMPLETED'), $floatingTimezone),
+            createdAt: $this->dateTimeValue($this->firstProperty($component, 'CREATED'), $floatingTimezone),
+            description: $this->stringProperty($component, 'DESCRIPTION'),
+            startsAt: $startsAt,
+            startIsDate: $this->isDate($startProperty),
+            startIsFloating: $this->isFloating($startProperty),
+            dueAt: $dueAt,
+            dueIsDate: $dueProperty === null && $dueAt !== null
+                ? $this->isDate($startProperty)
+                : $this->isDate($dueProperty),
+            dueIsFloating: $dueProperty === null && $dueAt !== null
+                ? $this->isFloating($startProperty)
+                : $this->isFloating($dueProperty),
+            duration: $duration,
+            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, 'LAST-MODIFIED'), $floatingTimezone),
+            location: $this->stringProperty($component, 'LOCATION'),
+            organizer: ($organizer = $this->firstProperty($component, 'ORGANIZER')) === null
+                ? null
+                : $this->hydrateOrganizer($organizer),
+            percentComplete: $this->integerProperty($component, 'PERCENT-COMPLETE'),
+            priority: $this->integerProperty($component, 'PRIORITY'),
+            recurrenceId: $this->dateTimeValue($recurrenceIdProperty, $floatingTimezone),
+            recurrenceIdIsDate: $this->isDate($recurrenceIdProperty),
+            recurrenceIdIsFloating: $this->isFloating($recurrenceIdProperty),
+            sequence: $this->integerProperty($component, 'SEQUENCE'),
+            status: $this->upperStringProperty($component, 'STATUS'),
+            summary: $this->stringProperty($component, 'SUMMARY'),
+            url: $this->stringProperty($component, 'URL'),
+            attendees: collect($attendees),
+            categories: collect($this->stringValues($component, 'CATEGORIES')),
+            alarms: collect($alarms),
             propertyItems: $this->hydrateProperties($component, $floatingTimezone),
             component: clone $component,
         );
@@ -487,6 +567,12 @@ final readonly class Reader
 
         return $property['TZID'] === null
             && ! \str_ends_with(\strtoupper($property->getRawMimeDirValue()), 'Z');
+    }
+
+    /** Determine whether a date property uses the iCalendar DATE value type. */
+    private function isDate(?SabreProperty $property): bool
+    {
+        return $property instanceof DateTimeProperty && $property->getValueType() === 'DATE';
     }
 
     /** Read and normalize an uppercase token property. */
