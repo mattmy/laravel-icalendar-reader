@@ -67,6 +67,16 @@ it('keeps source and size failures visible through nullable APIs', function () {
         ->toThrow(CalendarTooLarge::class);
 });
 
+it('distinguishes a vanished uploaded backing file from an unreadable file', function () {
+    $file = Mockery::mock(UploadedFile::class)->makePartial();
+    $file->shouldReceive('isValid')->once()->andReturn(true);
+    $file->shouldReceive('getRealPath')->once()->andReturn(false);
+    $file->shouldReceive('getPathname')->once()->andReturn(__DIR__ . '/../Fixtures/missing-upload.ics');
+
+    expect(fn () => app(Reader::class)->fromUploadedFile($file))
+        ->toThrow(CalendarFileNotFound::class);
+});
+
 it('stops reading a stream as soon as the byte limit is exceeded', function () {
     $stream = \fopen('php://temp', 'w+b');
 
