@@ -16,10 +16,7 @@ use Sabre\VObject\Component\VCalendar;
  * Represent an immutable, queryable snapshot of one VCALENDAR document.
  *
  * @phpstan-type ParameterMap array<string, string|list<string>>
- * @phpstan-type StructuredValue array<array-key, string|list<string>>
- * @phpstan-type PropertyAtom bool|int|float|string|\Carbon\CarbonImmutable|DateInterval|StructuredValue
- * @phpstan-type PropertyValue PropertyAtom|list<PropertyAtom>|null
- * @phpstan-type PropertyArray array{name: string, type: string, value: PropertyValue, values: list<PropertyAtom>, parameters: ParameterMap, raw_value: string}
+ * @phpstan-import-type PropertyArray from Property
  * @phpstan-type ComponentArray array{name: string, properties: list<PropertyArray>, components: list<array<string, mixed>>}
  * @phpstan-type IssueArray array{level: int, code: string, message: string, source: string, line: ?int, component: ?string, property: ?string}
  * @phpstan-type OrganizerArray array{address: string, email: ?string, name: ?string, sent_by: ?string, directory: ?string, parameters: ParameterMap}
@@ -241,7 +238,7 @@ final readonly class Calendar implements JsonSerializable
         return [
             'name' => 'VCALENDAR',
             'properties' => \array_map(
-                fn (Property $property): array => $this->propertyArray($property),
+                fn (Property $property): array => $property->toArray(),
                 $this->propertyItems,
             ),
             'components' => \array_map(
@@ -422,34 +419,11 @@ final readonly class Calendar implements JsonSerializable
         return [
             'name' => $component->name,
             'properties' => \array_values($component->properties()
-                ->map(fn (Property $property): array => $this->propertyArray($property))
+                ->map(fn (Property $property): array => $property->toArray())
                 ->all()),
             'components' => \array_values($component->components()
                 ->map(fn (Component $child): array => $this->componentArray($child))
                 ->all()),
-        ];
-    }
-
-    /**
-     * Convert a property without collapsing its values or parameters.
-     *
-     * @return PropertyArray
-     */
-    private function propertyArray(Property $property): array
-    {
-        $value = match (\count($property->values)) {
-            0 => null,
-            1 => $property->values[0],
-            default => $property->values,
-        };
-
-        return [
-            'name' => $property->name,
-            'type' => $property->type,
-            'value' => $value,
-            'values' => $property->values,
-            'parameters' => $this->parameterArray($property->parameters()),
-            'raw_value' => $property->rawValue(),
         ];
     }
 

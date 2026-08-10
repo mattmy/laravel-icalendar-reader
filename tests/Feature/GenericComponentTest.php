@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Mattmy\ICalendar\Facades\ICalendar;
+use Mattmy\ICalendar\Property;
 
 it('preserves and exposes every property from an untyped VFREEBUSY component', function () {
     $calendar = ICalendar::read(calendarFixture('freebusy'));
@@ -95,4 +96,36 @@ it('exports a normalized component tree without collapsing repeated properties',
     expect($tree['name'])->toBe('VCALENDAR')
         ->and($freeBusy['name'])->toBe('VFREEBUSY')
         ->and(collect($freeBusy['properties'])->where('name', 'FREEBUSY'))->toHaveCount(3);
+});
+
+it('exports a property using the normalized shape shared by component trees', function () {
+    $empty = new Property('X-EMPTY', 'unknown', null, [], [], '');
+    $single = new Property('X-SINGLE', 'text', 'one', ['one'], ['LANGUAGE' => 'en'], 'one');
+    $multiple = new Property('X-MULTIPLE', 'text', ['one', 'two'], ['one', 'two'], [], 'one,two');
+
+    expect($empty->toArray())->toBe([
+        'name' => 'X-EMPTY',
+        'type' => 'unknown',
+        'value' => null,
+        'values' => [],
+        'parameters' => [],
+        'raw_value' => '',
+    ])
+        ->and($single->toArray())->toMatchArray([
+            'value' => 'one',
+            'values' => ['one'],
+            'parameters' => ['LANGUAGE' => 'en'],
+        ])
+        ->and($multiple->toArray())->toMatchArray([
+            'value' => ['one', 'two'],
+            'values' => ['one', 'two'],
+        ]);
+
+    $calendar = ICalendar::read(calendarFixture('freebusy'));
+    $property = $calendar->components('VFREEBUSY')->sole()->property('FREEBUSY');
+    $treeProperty = collect($calendar->toComponentArray()['components'][0]['properties'])
+        ->firstWhere('name', 'FREEBUSY');
+
+    expect($property)->not->toBeNull()
+        ->and($property?->toArray())->toBe($treeProperty);
 });
