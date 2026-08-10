@@ -13,7 +13,6 @@ use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Organizer;
-use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Reader;
 
 it('resolves one shared reader through Laravel and the facade', function () {
@@ -54,7 +53,6 @@ it('keeps domain models final and readonly', function (string $class) {
     Calendar::class,
     Event::class,
     Component::class,
-    Property::class,
     CalendarIssue::class,
     Organizer::class,
     Attendee::class,
@@ -68,7 +66,6 @@ it('does not expose uncommitted standalone serializers on nested domain models',
 })->with([
     Event::class,
     Component::class,
-    Property::class,
     Organizer::class,
     Attendee::class,
     Alarm::class,

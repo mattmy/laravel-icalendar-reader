@@ -14,6 +14,7 @@ use InvalidArgumentException;
  * @phpstan-type StructuredValue array<array-key, string|list<string>>
  * @phpstan-type PropertyAtom bool|int|float|string|CarbonImmutable|DateInterval|StructuredValue
  * @phpstan-type PropertyValue PropertyAtom|list<PropertyAtom>|null
+ * @phpstan-type PropertyArray array{name: string, type: string, value: PropertyValue, values: list<PropertyAtom>, parameters: array<string, string|list<string>>, raw_value: string}
  */
 final readonly class Property
 {
@@ -65,6 +66,23 @@ final readonly class Property
     public function rawValue(): string
     {
         return $this->rawValue;
+    }
+
+    /**
+     * Export the complete normalized property representation.
+     *
+     * @return PropertyArray
+     */
+    public function toArray(): array
+    {
+        return [
+            'name' => $this->name,
+            'type' => $this->type,
+            'value' => $this->value,
+            'values' => $this->values,
+            'parameters' => $this->parameters(),
+            'raw_value' => $this->rawValue(),
+        ];
     }
 
     /**
