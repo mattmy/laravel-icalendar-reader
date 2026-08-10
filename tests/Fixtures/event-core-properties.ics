@@ -1,0 +1,28 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Mattmy//Event Core Properties Test//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:event-core-properties@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+DTEND:20260803T110000Z
+SUMMARY:Event core properties fixture
+DESCRIPTION:Fixture for the Event typed property shortcuts.
+LOCATION:Taipei Test Room
+GEO:25.033000;121.565400
+TRANSP:TRANSPARENT
+COMMENT:First comment
+COMMENT:Second comment
+CONTACT:reception@example.test
+CONTACT:helpdesk@example.test
+RESOURCES:Projector,Room A
+RESOURCES:Whiteboard
+RRULE:FREQ=DAILY;COUNT=3
+ATTACH;FMTTYPE=text/plain:https://example.test/event-notes.txt
+EXDATE:20260804T100000Z
+REQUEST-STATUS:2.0;Success
+RELATED-TO;RELTYPE=CHILD:parent-event@example.test
+RDATE:20260806T100000Z
+END:VEVENT
+END:VCALENDAR

@@ -24,8 +24,9 @@ use Sabre\VObject\Component\VCalendar;
  * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
  * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
  * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, repeat: ?int, duration: ?string}
- * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>}
- * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>}
+ * @phpstan-type GeoArray array{latitude: float, longitude: float}
+ * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>, geo: ?GeoArray, transparency: ?string, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
+ * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>, geo: ?GeoArray, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
  * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, warnings: list<IssueArray>}
  */
 final readonly class Calendar implements JsonSerializable
@@ -378,6 +379,17 @@ final readonly class Calendar implements JsonSerializable
             'attendees' => \array_values($event->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
             'alarms' => \array_values($event->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
             'categories' => \array_values($event->categories->all()),
+            'geo' => $event->geo,
+            'transparency' => $event->transparency,
+            'comments' => \array_values($event->comments->all()),
+            'contacts' => \array_values($event->contacts->all()),
+            'resources' => \array_values($event->resources->all()),
+            'recurrence_rule' => $event->recurrenceRule?->toArray(),
+            'attachments' => $this->propertyArrays($event->attachments),
+            'exception_dates' => $this->propertyArrays($event->exceptionDates),
+            'request_statuses' => $this->propertyArrays($event->requestStatuses),
+            'related_to' => $this->propertyArrays($event->relatedTo),
+            'recurrence_dates' => $this->propertyArrays($event->recurrenceDates),
         ];
     }
 
@@ -417,6 +429,16 @@ final readonly class Calendar implements JsonSerializable
             'attendees' => \array_values($todo->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
             'categories' => \array_values($todo->categories->all()),
             'alarms' => \array_values($todo->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
+            'geo' => $todo->geo,
+            'comments' => \array_values($todo->comments->all()),
+            'contacts' => \array_values($todo->contacts->all()),
+            'resources' => \array_values($todo->resources->all()),
+            'recurrence_rule' => $todo->recurrenceRule?->toArray(),
+            'attachments' => $this->propertyArrays($todo->attachments),
+            'exception_dates' => $this->propertyArrays($todo->exceptionDates),
+            'request_statuses' => $this->propertyArrays($todo->requestStatuses),
+            'related_to' => $this->propertyArrays($todo->relatedTo),
+            'recurrence_dates' => $this->propertyArrays($todo->recurrenceDates),
         ];
     }
 
@@ -529,6 +551,17 @@ final readonly class Calendar implements JsonSerializable
                 ->map(fn (Component $child): array => $this->componentArray($child))
                 ->all()),
         ];
+    }
+
+    /**
+     * Convert ordered generic property shortcuts for the Calendar output contract.
+     *
+     * @param  Collection<int, Property>  $properties
+     * @return list<PropertyArray>
+     */
+    private function propertyArrays(Collection $properties): array
+    {
+        return \array_values($properties->map(static fn (Property $property): array => $property->toArray())->all());
     }
 
     /**

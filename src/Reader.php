@@ -296,6 +296,7 @@ final readonly class Reader
      */
     private function hydrateEvent(VEvent $component, string $floatingTimezone): Event
     {
+        $properties = $this->hydrateProperties($component, $floatingTimezone);
         $startProperty = $this->firstProperty($component, 'DTSTART');
         $endProperty = $this->firstProperty($component, 'DTEND');
         $durationProperty = $this->firstProperty($component, 'DURATION');
@@ -349,9 +350,20 @@ final readonly class Reader
                 : $this->hydrateOrganizer($organizer),
             attendees: $this->hydrateAttendees($component),
             alarms: $this->hydrateAlarms($component, $floatingTimezone),
-            categories: collect($this->stringValues($component, 'CATEGORIES')),
+            categories: collect($this->stringValues($properties, 'CATEGORIES')),
             allDay: $allDay,
-            propertyItems: $this->hydrateProperties($component, $floatingTimezone),
+            geo: $this->geoValue($this->firstHydratedProperty($properties, 'GEO')),
+            transparency: $this->upperProperty($this->firstHydratedProperty($properties, 'TRANSP')),
+            comments: collect($this->textValues($properties, 'COMMENT')),
+            contacts: collect($this->textValues($properties, 'CONTACT')),
+            resources: collect($this->stringValues($properties, 'RESOURCES')),
+            recurrenceRule: $this->firstHydratedProperty($properties, 'RRULE'),
+            attachments: collect($this->hydratedProperties($properties, 'ATTACH')),
+            exceptionDates: collect($this->hydratedProperties($properties, 'EXDATE')),
+            requestStatuses: collect($this->hydratedProperties($properties, 'REQUEST-STATUS')),
+            relatedTo: collect($this->hydratedProperties($properties, 'RELATED-TO')),
+            recurrenceDates: collect($this->hydratedProperties($properties, 'RDATE')),
+            propertyItems: $properties,
             component: clone $component,
         );
     }
@@ -359,6 +371,7 @@ final readonly class Reader
     /** Hydrate one todo without exposing the mutable Sabre component. */
     private function hydrateTodo(VTodo $component, string $floatingTimezone): Todo
     {
+        $properties = $this->hydrateProperties($component, $floatingTimezone);
         $startProperty = $this->firstProperty($component, 'DTSTART');
         $dueProperty = $this->firstProperty($component, 'DUE');
         $durationProperty = $this->firstProperty($component, 'DURATION');
@@ -408,9 +421,19 @@ final readonly class Reader
             summary: $this->stringProperty($component, 'SUMMARY'),
             url: $this->stringProperty($component, 'URL'),
             attendees: $this->hydrateAttendees($component),
-            categories: collect($this->stringValues($component, 'CATEGORIES')),
+            categories: collect($this->stringValues($properties, 'CATEGORIES')),
             alarms: $this->hydrateAlarms($component, $floatingTimezone),
-            propertyItems: $this->hydrateProperties($component, $floatingTimezone),
+            geo: $this->geoValue($this->firstHydratedProperty($properties, 'GEO')),
+            comments: collect($this->textValues($properties, 'COMMENT')),
+            contacts: collect($this->textValues($properties, 'CONTACT')),
+            resources: collect($this->stringValues($properties, 'RESOURCES')),
+            recurrenceRule: $this->firstHydratedProperty($properties, 'RRULE'),
+            attachments: collect($this->hydratedProperties($properties, 'ATTACH')),
+            exceptionDates: collect($this->hydratedProperties($properties, 'EXDATE')),
+            requestStatuses: collect($this->hydratedProperties($properties, 'REQUEST-STATUS')),
+            relatedTo: collect($this->hydratedProperties($properties, 'RELATED-TO')),
+            recurrenceDates: collect($this->hydratedProperties($properties, 'RDATE')),
+            propertyItems: $properties,
             component: clone $component,
         );
     }
@@ -606,21 +629,100 @@ final readonly class Reader
     }
 
     /**
-     * Read every decoded string part from repeated direct properties.
+     * Read every decoded string part from repeated hydrated properties.
      *
+     * @param  list<Property>  $properties
      * @return list<string>
      */
-    private function stringValues(SabreComponent $component, string $name): array
+    private function stringValues(array $properties, string $name): array
     {
         $values = [];
 
-        foreach ($this->directProperties($component, $name) as $property) {
-            foreach ($property->getParts() as $value) {
-                $values[] = (string) $value;
+        foreach ($this->hydratedProperties($properties, $name) as $property) {
+            foreach ($property->values as $value) {
+                if (\is_string($value)) {
+                    $values[] = $value;
+                }
             }
         }
 
         return $values;
+    }
+
+    /**
+     * Read one decoded TEXT value for each repeated hydrated property.
+     *
+     * @param  list<Property>  $properties
+     * @return list<string>
+     */
+    private function textValues(array $properties, string $name): array
+    {
+        return \array_values(\array_filter(\array_map(
+            static fn (Property $property): mixed => $property->values[0] ?? null,
+            $this->hydratedProperties($properties, $name),
+        ), \is_string(...)));
+    }
+
+    /**
+     * Return the first hydrated property with the requested name.
+     *
+     * @param  list<Property>  $properties
+     */
+    private function firstHydratedProperty(array $properties, string $name): ?Property
+    {
+        return $this->hydratedProperties($properties, $name)[0] ?? null;
+    }
+
+    /**
+     * Return hydrated properties with the requested name in document order.
+     *
+     * @param  list<Property>  $properties
+     * @return list<Property>
+     */
+    private function hydratedProperties(array $properties, string $name): array
+    {
+        return \array_values(\array_filter(
+            $properties,
+            static fn (Property $property): bool => $property->name === $name,
+        ));
+    }
+
+    /**
+     * Map a GEO property only when it is an in-range latitude and longitude pair.
+     *
+     * @return array{latitude: float, longitude: float}|null
+     */
+    private function geoValue(?Property $property): ?array
+    {
+        if ($property === null) {
+            return null;
+        }
+
+        $parts = \explode(';', $property->rawValue());
+
+        if (\count($parts) !== 2 || ! \is_numeric($parts[0]) || ! \is_numeric($parts[1])) {
+            return null;
+        }
+
+        $latitude = (float) $parts[0];
+        $longitude = (float) $parts[1];
+
+        if (! \is_finite($latitude) || ! \is_finite($longitude)
+            || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+            return null;
+        }
+
+        return ['latitude' => $latitude, 'longitude' => $longitude];
+    }
+
+    /** Read an optional uppercase token from an already hydrated property. */
+    private function upperProperty(?Property $property): ?string
+    {
+        if (! \is_string($property?->value) || $property->value === '') {
+            return null;
+        }
+
+        return \strtoupper($property->value);
     }
 
     /**

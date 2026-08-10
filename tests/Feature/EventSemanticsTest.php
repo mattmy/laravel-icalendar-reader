@@ -233,3 +233,92 @@ ICS);
         ->toBe($todo->alarms->sole()->trigger?->duration()?->i)
         ->and($event->alarms->sole()->action)->toBe($todo->alarms->sole()->action);
 });
+
+it('maps shared RFC core property shortcuts for Event and Todo from one normalized property list', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:event-core@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+GEO:37.386013;-122.082932
+TRANSP:transparent
+COMMENT:First comment
+COMMENT:Second comment
+CONTACT:Reception
+RESOURCES:Projector,Room A
+RESOURCES:Whiteboard
+RRULE:FREQ=DAILY;COUNT=2
+ATTACH;FMTTYPE=text/plain:https://example.test/event.txt
+EXDATE:20260804T100000Z
+REQUEST-STATUS:2.0;Success
+RELATED-TO;RELTYPE=CHILD:parent-event@example.test
+RDATE:20260805T100000Z
+END:VEVENT
+BEGIN:VTODO
+UID:todo-core@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+GEO:37.386013;-122.082932
+COMMENT:First comment
+COMMENT:Second comment
+CONTACT:Reception
+RESOURCES:Projector,Room A
+RESOURCES:Whiteboard
+RRULE:FREQ=DAILY;COUNT=2
+ATTACH;FMTTYPE=text/plain:https://example.test/todo.txt
+EXDATE:20260804T100000Z
+REQUEST-STATUS:2.0;Success
+RELATED-TO;RELTYPE=CHILD:parent-todo@example.test
+RDATE:20260805T100000Z
+END:VTODO
+END:VCALENDAR
+ICS);
+
+    $event = $calendar->events()->sole();
+    $todo = $calendar->todos()->sole();
+    $eventOutput = $calendar->toArray()['events'][0];
+    $todoOutput = $calendar->toArray()['todos'][0];
+
+    expect($event->geo)->toBe(['latitude' => 37.386013, 'longitude' => -122.082932])
+        ->and($todo->geo)->toBe($event->geo)
+        ->and($event->transparency)->toBe('TRANSPARENT')
+        ->and($event->comments->all())->toBe(['First comment', 'Second comment'])
+        ->and($todo->comments->all())->toBe($event->comments->all())
+        ->and($event->contacts->all())->toBe(['Reception'])
+        ->and($todo->contacts->all())->toBe($event->contacts->all())
+        ->and($event->resources->all())->toBe(['Projector', 'Room A', 'Whiteboard'])
+        ->and($todo->resources->all())->toBe($event->resources->all())
+        ->and($event->recurrenceRule?->name)->toBe('RRULE')
+        ->and($todo->recurrenceRule?->name)->toBe('RRULE')
+        ->and($event->attachments->sole()->parameter('FMTTYPE'))->toBe('text/plain')
+        ->and($todo->attachments->sole()->parameter('FMTTYPE'))->toBe('text/plain')
+        ->and($event->exceptionDates->sole()->name)->toBe('EXDATE')
+        ->and($todo->requestStatuses->sole()->name)->toBe('REQUEST-STATUS')
+        ->and($event->relatedTo->sole()->parameter('RELTYPE'))->toBe('CHILD')
+        ->and($todo->recurrenceDates->sole()->name)->toBe('RDATE')
+        ->and($eventOutput)->toHaveKeys(['geo', 'transparency', 'comments', 'contacts', 'resources', 'recurrence_rule', 'attachments', 'exception_dates', 'request_statuses', 'related_to', 'recurrence_dates'])
+        ->and($todoOutput)->toHaveKeys(['geo', 'comments', 'contacts', 'resources', 'recurrence_rule', 'attachments', 'exception_dates', 'request_statuses', 'related_to', 'recurrence_dates'])
+        ->and($eventOutput['attachments'][0]['parameters']['FMTTYPE'])->toBe('text/plain')
+        ->and($todoOutput['resources'])->toBe(['Projector', 'Room A', 'Whiteboard']);
+});
+
+it('keeps an invalid GEO property generic without exposing an invalid typed coordinate pair', function () {
+    $event = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:invalid-geo@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260803T100000Z
+GEO:91;181
+END:VEVENT
+END:VCALENDAR
+ICS)->events()->sole();
+
+    expect($event->geo)->toBeNull()
+        ->and($event->property('GEO')?->rawValue())->toBe('91;181');
+});
