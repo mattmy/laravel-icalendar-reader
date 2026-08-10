@@ -128,7 +128,9 @@ final class BoundedInputReader
         $path = $file->getRealPath();
 
         if ($path === false) {
-            throw new CalendarFileUnreadable('The uploaded iCalendar file is not readable.');
+            throw ! \file_exists($file->getPathname())
+                ? new CalendarFileNotFound('The uploaded iCalendar file no longer exists.')
+                : new CalendarFileUnreadable('The uploaded iCalendar file is not readable.');
         }
 
         return $this->path($path, $maxBytes);

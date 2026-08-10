@@ -49,7 +49,9 @@ normalized component tree。這些方法不會產生 `.ics`，也不保證 byte 
 ## 日期與時區
 
 - UTC 與可解析的 `TZID` 會保留原時區。
-- Floating time 依序使用 package setting、`app.timezone` 與 UTC 安全 fallback。
+- Floating time 在 `icalendar_reader.floating_timezone` 是有效 IANA 時區時使用該值；
+  未設定時才使用有效的 `app.timezone`，否則 fallback 至 UTC。若 package override
+  已設定但無效，會直接 fallback 至 UTC，即使 `app.timezone` 有效也不會改用它。
 - 文件中的 `TZID` 無法解析時不會偷換 UTC；typed value 為 `null`、Property 保留
   原值，Calendar 並產生 `mapping_warning`。
 - 全天 `DTEND` 保持 exclusive，`lastDay` 是 inclusive convenience date。

@@ -62,8 +62,9 @@ do not generate `.ics` and do not provide byte-for-byte round trips.
 ## Date and timezone semantics
 
 - UTC and resolvable `TZID` values retain their timezone.
-- Floating values use `icalendar_reader.floating_timezone`, then
-  `app.timezone`, with UTC as the safe configuration fallback.
+- Floating values use `icalendar_reader.floating_timezone` when it is a valid IANA
+  timezone; when it is unset, they use a valid `app.timezone`, otherwise UTC. An
+  invalid package override falls back directly to UTC, even when `app.timezone` is valid.
 - An unresolved document `TZID` is not replaced by UTC. The typed value is
   `null`, the raw Property remains available, and Calendar receives a
   `mapping_warning`.
