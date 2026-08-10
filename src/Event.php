@@ -30,6 +30,10 @@ final readonly class Event
         public ?CarbonImmutable $endsAt,
         /** Whether DTSTART uses the iCalendar DATE value type. */
         public bool $allDay,
+        /** Whether DTSTART uses the iCalendar DATE value type. */
+        public bool $startIsDate,
+        /** Whether DTEND, or its derived value, uses DATE semantics. */
+        public bool $endIsDate,
         /** Whether DTSTART has DATE or floating DATE-TIME semantics. */
         public bool $startIsFloating,
         /** Whether DTEND, or its derived value, has floating semantics. */
@@ -44,6 +48,11 @@ final readonly class Event
         public ?string $status,
         public ?string $classification,
         public ?int $priority,
+        public ?CarbonImmutable $recurrenceId,
+        /** Whether RECURRENCE-ID uses the iCalendar DATE value type. */
+        public bool $recurrenceIdIsDate,
+        /** Whether RECURRENCE-ID has DATE or floating DATE-TIME semantics. */
+        public bool $recurrenceIdIsFloating,
         public ?int $sequence,
         public ?string $url,
         public ?Organizer $organizer,
