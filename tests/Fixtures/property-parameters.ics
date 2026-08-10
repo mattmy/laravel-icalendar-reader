@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Mattmy//Property Parameter Fixture//EN
+BEGIN:VEVENT
+UID:property-parameters@example.test
+DTSTAMP:20260810T000000Z
+DTSTART;TZID=Asia/Taipei:20260810T090000
+DTEND;TZID=Asia/Taipei:20260810T100000
+ORGANIZER;CN="Matt Huang";SENT-BY="mailto:assistant@example.test":mailto:organizer@example.test
+ATTENDEE;CN="Jane Doe";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=TRUE;DELEGATED-FROM="mailto:one@example.test,mailto:two@example.test":mailto:jane@example.test
+X-APP-META;ONE=alpha;TWO="beta value":custom-value
+SUMMARY:Property parameter test
+END:VEVENT
+END:VCALENDAR
