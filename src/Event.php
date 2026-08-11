@@ -7,12 +7,14 @@ namespace Mattmy\ICalendar;
 use Carbon\CarbonImmutable;
 use DateInterval;
 use Illuminate\Support\Collection;
-use InvalidArgumentException;
+use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VEvent;
 
 /** Represent an immutable typed view of one VEVENT component. */
 final readonly class Event
 {
+    use QueriesProperties;
+
     /**
      * Hydrate an immutable event snapshot.
      *
@@ -103,46 +105,14 @@ final readonly class Event
     }
 
     /**
-     * Return direct event properties, optionally filtered case-insensitively by name.
+     * Return the event's ordered direct properties for the internal query trait.
      *
-     * @return Collection<int, Property>
+     * @return list<Property>
      *
-     * @throws InvalidArgumentException
+     * @internal
      */
-    public function properties(?string $name = null): Collection
+    protected function propertyItems(): array
     {
-        if ($name === null) {
-            return collect($this->propertyItems);
-        }
-
-        $name = \strtoupper(\trim($name));
-
-        if ($name === '') {
-            throw new InvalidArgumentException('Property names must not be empty.');
-        }
-
-        return collect($this->propertyItems)
-            ->filter(static fn (Property $property): bool => $property->name === $name)
-            ->values();
-    }
-
-    /**
-     * Determine whether any direct property, or a named direct property, exists.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function hasProperty(?string $name = null): bool
-    {
-        return $this->properties($name)->isNotEmpty();
-    }
-
-    /**
-     * Return the first direct property matching a case-insensitive name.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function property(string $name): ?Property
-    {
-        return $this->properties($name)->first();
+        return $this->propertyItems;
     }
 }

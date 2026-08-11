@@ -17,7 +17,7 @@ it('documents every package class and declared method', function () {
         $relative = substr($file->getPathname(), strlen($source) + 1, -4);
         $class = 'Mattmy\\ICalendar\\' . str_replace(DIRECTORY_SEPARATOR, '\\', $relative);
 
-        expect(class_exists($class) || interface_exists($class))->toBeTrue();
+        expect(class_exists($class) || interface_exists($class) || trait_exists($class))->toBeTrue();
 
         $reflection = new ReflectionClass($class);
 

@@ -54,6 +54,54 @@ it('validates property and component query names', function () {
         ->and(fn () => $component->properties("\t"))->toThrow(InvalidArgumentException::class);
 });
 
+it('applies identical direct property query behavior to every property-bearing snapshot', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Shared Property Queries//EN
+X-REPEATED:one
+X-REPEATED:two
+BEGIN:VEVENT
+UID:event@example.test
+DTSTAMP:20260804T000000Z
+DTSTART:20260804T010000Z
+X-REPEATED:one
+X-REPEATED:two
+END:VEVENT
+BEGIN:VTODO
+UID:todo@example.test
+DTSTAMP:20260804T000000Z
+DTSTART:20260804T010000Z
+X-REPEATED:one
+X-REPEATED:two
+END:VTODO
+END:VCALENDAR
+ICS);
+
+    $snapshots = [
+        $calendar,
+        $calendar->events()->sole(),
+        $calendar->todos()->sole(),
+        $calendar->components('VTODO')->sole(),
+    ];
+
+    foreach ($snapshots as $snapshot) {
+        expect($snapshot->hasProperty())->toBeTrue()
+            ->and($snapshot->hasProperty(' x-repeated '))->toBeTrue()
+            ->and($snapshot->properties('X-REPEATED')->pluck('value')->all())->toBe(['one', 'two'])
+            ->and($snapshot->property('x-repeated')?->value)->toBe('one')
+            ->and($snapshot->properties('missing'))->toBeEmpty()
+            ->and($snapshot->hasProperty('missing'))->toBeFalse()
+            ->and($snapshot->property('missing'))->toBeNull()
+            ->and(fn () => $snapshot->properties("\t"))->toThrow(InvalidArgumentException::class);
+
+        $properties = $snapshot->properties('X-REPEATED');
+        $properties->pop();
+
+        expect($snapshot->properties('X-REPEATED'))->toHaveCount(2);
+    }
+});
+
 it('supports presence queries without recursing into child components', function () {
     $calendar = ICalendar::read(calendarFixture('freebusy'));
 
