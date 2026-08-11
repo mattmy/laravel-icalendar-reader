@@ -11,6 +11,7 @@ use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use JsonException;
 use JsonSerializable;
+use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VCalendar;
 
 /**
@@ -31,6 +32,8 @@ use Sabre\VObject\Component\VCalendar;
  */
 final readonly class Calendar implements JsonSerializable
 {
+    use QueriesProperties;
+
     /**
      * Hydrate an immutable calendar snapshot and its ordered child data.
      *
@@ -188,46 +191,6 @@ final readonly class Calendar implements JsonSerializable
     }
 
     /**
-     * Return direct calendar properties, optionally filtered case-insensitively by name.
-     *
-     * @return Collection<int, Property>
-     *
-     * @throws InvalidArgumentException
-     */
-    public function properties(?string $name = null): Collection
-    {
-        if ($name === null) {
-            return collect($this->propertyItems);
-        }
-
-        $name = $this->normalizeName($name, 'Property');
-
-        return collect($this->propertyItems)
-            ->filter(static fn (Property $property): bool => $property->name === $name)
-            ->values();
-    }
-
-    /**
-     * Determine whether any direct property, or a named direct property, exists.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function hasProperty(?string $name = null): bool
-    {
-        return $this->properties($name)->isNotEmpty();
-    }
-
-    /**
-     * Return the first direct property matching a case-insensitive name.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function property(string $name): ?Property
-    {
-        return $this->properties($name)->first();
-    }
-
-    /**
      * Return direct child components, optionally filtered case-insensitively by name.
      *
      * @return Collection<int, Component>
@@ -341,6 +304,18 @@ final readonly class Calendar implements JsonSerializable
     public function toJson(int $options = 0): string
     {
         return \json_encode($this->toArray(), $options | JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Return the calendar's ordered direct properties for the internal query trait.
+     *
+     * @return list<Property>
+     *
+     * @internal
+     */
+    protected function propertyItems(): array
+    {
+        return $this->propertyItems;
     }
 
     /**

@@ -6,11 +6,14 @@ namespace Mattmy\ICalendar;
 
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
+use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component as SabreComponent;
 
 /** Represent an immutable generic view of an untyped iCalendar component. */
 final readonly class Component
 {
+    use QueriesProperties;
+
     /**
      * Hydrate a generic component and its ordered direct children.
      *
@@ -24,46 +27,6 @@ final readonly class Component
         private array $componentItems,
         private SabreComponent $component,
     ) {}
-
-    /**
-     * Return direct properties, optionally filtered case-insensitively by name.
-     *
-     * @return Collection<int, Property>
-     *
-     * @throws InvalidArgumentException
-     */
-    public function properties(?string $name = null): Collection
-    {
-        if ($name === null) {
-            return collect($this->propertyItems);
-        }
-
-        $name = self::normalizeName($name, 'Property');
-
-        return collect($this->propertyItems)
-            ->filter(static fn (Property $property): bool => $property->name === $name)
-            ->values();
-    }
-
-    /**
-     * Determine whether any direct property, or a named direct property, exists.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function hasProperty(?string $name = null): bool
-    {
-        return $this->properties($name)->isNotEmpty();
-    }
-
-    /**
-     * Return the first direct property matching a case-insensitive name.
-     *
-     * @throws InvalidArgumentException
-     */
-    public function property(string $name): ?Property
-    {
-        return $this->properties($name)->first();
-    }
 
     /**
      * Return direct child components, optionally filtered case-insensitively by name.
@@ -89,6 +52,18 @@ final readonly class Component
     public function rawComponent(): SabreComponent
     {
         return clone $this->component;
+    }
+
+    /**
+     * Return the generic component's ordered direct properties for the internal query trait.
+     *
+     * @return list<Property>
+     *
+     * @internal
+     */
+    protected function propertyItems(): array
+    {
+        return $this->propertyItems;
     }
 
     /**
