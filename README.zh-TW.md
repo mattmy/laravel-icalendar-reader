@@ -2,23 +2,30 @@
 
 [English](README.md)
 
-透過符合 Laravel 使用習慣的 API 讀取 `.ics` 行事曆。你可以直接取得事件、日期、
-全天狀態、主辦人、參與者、提醒、properties 與 components，不必自己處理原始
-iCalendar 文字。
+在 Laravel 讀取並驗證 `.ics` 行事曆，再透過 `ICalendar` 查詢事件、待辦、日期、參與者、
+提醒、recurrence 資料、properties 與 components。
 
-## 可以做什麼
+## 特色
 
-- 從字串、本機檔案、stream 或 Laravel 上傳檔案讀取 `.ics`。
-- 取得全部事件，或依 UID、日期範圍查詢事件。
-- 取得事件日期、持續時間、地點、狀態、分類及其他常用欄位。
-- 使用 `$event->allDay` 或 `$event->isAllDay()` 確認是否為全天事件。
-- 取得主辦人、參與者、委派資料、提醒及提醒時間。
-- 讀取 `VTODO`、`VJOURNAL`、`VFREEBUSY`、`VTIMEZONE`、自訂欄位及未知 components。
-- 自己選擇不合法內容要拋出例外或回傳 `null`。
-- 取得行事曆中需要留意的警告。
-- 將行事曆轉成 array、JSON 或完整的 component 階層。
+- 從完整字串、本機檔案、stream 或 Laravel 上傳檔案讀取資料，並以可設定的 bytes 上限
+  控制輸入大小。
+- 依文件順序、完全符合的 UID 或日期範圍查詢事件與待辦。
+- 以 `CarbonImmutable`、`DateInterval` 與 Laravel Collections 取得常用行事曆欄位。
+- 取得主辦人、參與者、委派資料、提醒、recurrence 資料，以及全天與 floating time 行為。
+- 透過 `Property` 與 `Component` 取得重複、自訂及非事件資料。
+- 選擇讓不合法內容拋出例外或回傳 `null`，並在成功讀取後查看結構化 warnings。
+- 將結果轉成 array、JSON 或完整的 property 與 component 階層。
 
-本套件只負責讀取，不會產生 `.ics`，也不會把重複事件展開成每一次發生的事件。
+## 系統需求
+
+| 需求 | 宣告支援 | CI 持續實測 |
+| --- | --- | --- |
+| PHP | PHP 8.x 系列的 8.3 以上版本 | 8.3、8.4、8.5 |
+| Laravel | 11、12、13 | 11、12、13 |
+| PHP extensions | DOM、JSON、Multibyte String、XMLReader、XMLWriter | Composer 安裝時檢查 |
+| libxml | 2.6.20 以上版本 | Composer 安裝時檢查 |
+
+PHP extensions 與 libxml 需求來自 Sabre/VObject 5 和 Sabre/XML。
 
 ## 安裝
 
@@ -26,109 +33,67 @@ iCalendar 文字。
 composer require mattmy/laravel-icalendar-reader
 ```
 
+## 設定
+
+套件安裝後可直接使用以下預設值：
+
+- `max_bytes`：每次最多接受 10 MiB 輸入。
+- `floating_timezone`：沒有 `Z` 或 `TZID` 的 date-time 使用 `app.timezone`。
+
+需要調整時再發布 `config/icalendar_reader.php`：
+
+```bash
+php artisan vendor:publish --tag=icalendar-reader-config
+```
+
 ## 快速開始
 
 ```php
-use Mattmy\ICalendar\Facades\ICalendar;
+$calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Calendar//EN
+BEGIN:VEVENT
+UID:meeting@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260810T090000Z
+SUMMARY:Project meeting
+END:VEVENT
+END:VCALENDAR
+ICS);
 
-$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
+$event = $calendar->events()->sole();
 
-foreach ($calendar->events() as $event) {
-    echo $event->summary;
-    echo $event->startsAt?->toDateTimeString();
-    echo $event->endsAt?->toDateTimeString();
-
-    if ($event->allDay) {
-        echo '全天';
-    }
-}
+echo $event->summary; // Project meeting
+echo $event->startsAt?->toIso8601String(); // 2026-08-10T09:00:00+00:00
 ```
 
-## 讀取 `.ics`
+## 讀取行事曆資料
+
+依輸入來源選擇方法：
 
 ```php
 $calendar = ICalendar::read($contents);
 $calendar = ICalendar::fromPath($path);
 $calendar = ICalendar::fromStream($stream);
-$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
+$calendar = ICalendar::fromUploadedFile($uploadedFile);
 ```
 
-不合法內容希望回傳 `null` 時，使用對應的 `try*()` 方法：
+每個方法都回傳相同的 `Calendar` 類型。對應的 `try*()` 方法會在 iCalendar 內容不合法時
+回傳 `null`；來源、大小與設定錯誤仍會拋出各自的例外。
 
 ```php
-$calendar = ICalendar::tryRead($contents);
-$calendar = ICalendar::tryFromPath($path);
-$calendar = ICalendar::tryFromStream($stream);
-$calendar = ICalendar::tryFromUploadedFile($request->file('calendar'));
-```
-
-檔案、stream、upload、大小及設定錯誤仍會拋出對應例外。
-
-## 使用事件資料
-
-```php
-$events = $calendar->events();
-$eventsWithUid = $calendar->events('event@example.com');
-$event = $calendar->event('event@example.com');
-$hasEvents = $calendar->hasEvents();
-$hasEvent = $calendar->hasEvents('event@example.com');
+$events = $calendar->events('event@example.test');
+$event = $calendar->event('event@example.test');
+$todos = $calendar->todos();
 $eventsInRange = $calendar->eventsBetween($from, $until);
-```
-
-`Event` 可以取得：
-
-- `uid`、`summary`、`description`、`location`、`url`
-- `startsAt`、`endsAt`、`lastDay`、`duration`
-- `allDay`、`startIsFloating`、`endIsFloating`
-- `status`、`classification`、`priority`、`sequence`
-- `timestamp`、`createdAt`、`lastModifiedAt`
-- `organizer`、`attendees`、`alarms`、`categories`
-
-日期使用 `CarbonImmutable`，持續時間使用 `DateInterval`，多筆資料使用 Laravel
-Collection。`eventsBetween()` 只回傳 `.ics` 內實際存在的事件，不會額外展開重複規則。
-
-## 主辦人、參與者與提醒
-
-```php
-$organizer = $event->organizer;
-$organizer?->email;
-$organizer?->name;
-
-foreach ($event->attendees as $attendee) {
-    $attendee->email;
-    $attendee->name;
-    $attendee->role;
-    $attendee->status;
-    $attendee->rsvp;
-}
-
-foreach ($event->alarms as $alarm) {
-    $alarm->action;
-    $alarm->description;
-    $alarm->trigger?->duration();
-    $alarm->trigger?->dateTime();
-}
-```
-
-## Properties 與 components
-
-需要的資料沒有專用 Event 欄位時，可以從 properties 與 components 取得。
-
-```php
-$summaryProperty = $event->property('SUMMARY');
-$rules = $event->properties('RRULE');
-$hasLocation = $event->hasProperty('LOCATION');
-
 $freeBusy = $calendar->component('VFREEBUSY');
-$todos = $calendar->components('VTODO');
-$hasTimezones = $calendar->hasComponent('VTIMEZONE');
-
-$periods = $freeBusy?->properties('FREEBUSY');
-$busyType = $periods?->first()?->parameter('FBTYPE');
+$customProperty = $calendar->property('X-CUSTOM');
+$json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-Property 與 component 名稱不區分大小寫。`property()`、`component()` 取得第一筆；
-`properties()`、`components()` 取得所有符合的資料。
+UID 比對區分大小寫，Collections 會保留文件順序。事件範圍查詢使用 `.ics` 輸入中的事件
+components，recurrence rules 與 dates 則保留在 properties 中供應用程式取得。
 
 ## 驗證與警告
 
@@ -144,27 +109,19 @@ try {
 $warnings = $calendar->warnings();
 ```
 
-內容不合法而被拒絕時，可由 `issues()` 取得原因。成功讀取後，可由 `warnings()` 取得
-仍需留意的內容或設定問題。
+`issues()` 說明內容遭拒絕的原因；`warnings()` 回報成功讀取後仍需留意的內容或設定。
 
-## Array 與 JSON
+## 效能與安全
 
-```php
-$data = $calendar->toArray();
-$json = $calendar->toJson(JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-$tree = $calendar->toComponentArray();
-```
+請依應用程式接受的最大行事曆調整 `max_bytes`。`fromPath()` 應使用可信任的本機路徑；
+由呼叫端建立的 stream 應由呼叫端關閉。顯示行事曆文字前應先轉義、開啟行事曆中的 URL
+前應先驗證，也應避免記錄可能包含個人資料的完整輸入或輸出。
 
-`toArray()` 與 `toJson()` 包含常用 Calendar 與 Event 資料；`toComponentArray()` 包含
-完整的 property 與 component 階層，也包含非事件及自訂資料。
+## 文件
 
-## 限制與安全
-
-輸入大小受 `icalendar_reader.max_bytes` 限制。行事曆欄位可能包含個人資料、使用者提供
-的文字與 URL，因此顯示前應做好輸出轉義、使用連結前先檢查，也應避免記錄完整內容。
-
-所有方法、欄位、參數、例外、時區及效能注意事項請參考
-[完整文件](https://mattmy.github.io/laravel-icalendar-reader-doc/zh-TW/)。
+- [完整文件](https://mattmy.github.io/laravel-icalendar-reader-doc/zh-TW/)
+- [Changelog](CHANGELOG.md)
+- [安全政策](SECURITY.md)
 
 ## 授權
 

@@ -2,24 +2,32 @@
 
 [繁體中文](README.zh-TW.md)
 
-Read `.ics` calendars with a Laravel-friendly API. Get events, dates, all-day status,
-organizers, attendees, alarms, properties, and components without working with raw
-iCalendar text.
+Read and validate `.ics` calendars in Laravel, then query events, todos, dates, participants,
+alarms, recurrence data, properties, and components through `ICalendar`.
 
-## What you can do
+## Features
 
-- Read `.ics` content from a string, local file, stream, or Laravel uploaded file.
-- Get all events or find events by UID and date range.
-- Read event dates, duration, location, status, categories, and other common fields.
-- Check whether an event is all day with `$event->allDay` or `$event->isAllDay()`.
-- Get organizers, attendees, delegation details, alarms, and alarm triggers.
-- Read `VTODO`, `VJOURNAL`, `VFREEBUSY`, `VTIMEZONE`, custom properties, and unknown components.
-- Choose whether invalid calendar content throws an exception or returns `null`.
-- Get readable warnings for calendar content that needs attention.
-- Convert calendar data to an array, JSON, or a complete component tree.
+- Read complete strings, local files, streams, and Laravel uploaded files with a configurable
+  byte limit.
+- Query events and todos in document order, by exact UID, or by date range.
+- Get common calendar fields as `CarbonImmutable`, `DateInterval`, and Laravel Collections.
+- Inspect organizers, attendees, delegation details, alarms, recurrence data, and all-day or
+  floating-time behavior.
+- Access repeated, custom, and non-event data through `Property` and `Component` objects.
+- Choose exceptions or `null` for invalid content and inspect structured warnings after a
+  successful read.
+- Convert results to arrays, JSON, or a complete property and component tree.
 
-This package reads calendars only. It does not generate `.ics` files or expand recurring
-events into individual occurrences.
+## Requirements
+
+| Requirement | Declared support | Continuously tested |
+| --- | --- | --- |
+| PHP | 8.3 or later in the PHP 8.x series | 8.3, 8.4, 8.5 |
+| Laravel | 11, 12, 13 | 11, 12, 13 |
+| PHP extensions | DOM, JSON, Multibyte String, XMLReader, XMLWriter | Checked by Composer during installation |
+| libxml | 2.6.20 or later | Checked by Composer during installation |
+
+The PHP extensions and libxml requirement come through Sabre/VObject 5 and Sabre/XML.
 
 ## Installation
 
@@ -27,110 +35,69 @@ events into individual occurrences.
 composer require mattmy/laravel-icalendar-reader
 ```
 
+## Configuration
+
+The package works immediately with these defaults:
+
+- `max_bytes`: accepts up to 10 MiB per input.
+- `floating_timezone`: uses `app.timezone` for date-times without `Z` or `TZID`.
+
+Publish `config/icalendar_reader.php` when you need different values:
+
+```bash
+php artisan vendor:publish --tag=icalendar-reader-config
+```
+
 ## Quick start
 
 ```php
-use Mattmy\ICalendar\Facades\ICalendar;
+$calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Calendar//EN
+BEGIN:VEVENT
+UID:meeting@example.test
+DTSTAMP:20260803T000000Z
+DTSTART:20260810T090000Z
+SUMMARY:Project meeting
+END:VEVENT
+END:VCALENDAR
+ICS);
 
-$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
+$event = $calendar->events()->sole();
 
-foreach ($calendar->events() as $event) {
-    echo $event->summary;
-    echo $event->startsAt?->toDateTimeString();
-    echo $event->endsAt?->toDateTimeString();
-
-    if ($event->allDay) {
-        echo 'All day';
-    }
-}
+echo $event->summary; // Project meeting
+echo $event->startsAt?->toIso8601String(); // 2026-08-10T09:00:00+00:00
 ```
 
-## Read `.ics` content
+## Read calendar data
+
+Choose the method that matches the input source:
 
 ```php
 $calendar = ICalendar::read($contents);
 $calendar = ICalendar::fromPath($path);
 $calendar = ICalendar::fromStream($stream);
-$calendar = ICalendar::fromUploadedFile($request->file('calendar'));
+$calendar = ICalendar::fromUploadedFile($uploadedFile);
 ```
 
-Use the matching `try*()` method when invalid calendar content should return `null`:
+Each method returns the same `Calendar` type. Its matching `try*()` method returns `null` for
+invalid iCalendar content; source, size, and configuration failures keep their specific
+exceptions.
 
 ```php
-$calendar = ICalendar::tryRead($contents);
-$calendar = ICalendar::tryFromPath($path);
-$calendar = ICalendar::tryFromStream($stream);
-$calendar = ICalendar::tryFromUploadedFile($request->file('calendar'));
-```
-
-File, stream, upload, size, and configuration errors still throw their matching exceptions.
-
-## Work with events
-
-```php
-$events = $calendar->events();
-$eventsWithUid = $calendar->events('event@example.com');
-$event = $calendar->event('event@example.com');
-$hasEvents = $calendar->hasEvents();
-$hasEvent = $calendar->hasEvents('event@example.com');
+$events = $calendar->events('event@example.test');
+$event = $calendar->event('event@example.test');
+$todos = $calendar->todos();
 $eventsInRange = $calendar->eventsBetween($from, $until);
-```
-
-An `Event` gives you:
-
-- `uid`, `summary`, `description`, `location`, and `url`
-- `startsAt`, `endsAt`, `lastDay`, and `duration`
-- `allDay`, `startIsFloating`, and `endIsFloating`
-- `status`, `classification`, `priority`, and `sequence`
-- `timestamp`, `createdAt`, and `lastModifiedAt`
-- `organizer`, `attendees`, `alarms`, and `categories`
-
-Dates are returned as `CarbonImmutable`, durations as `DateInterval`, and lists as Laravel
-Collections. `eventsBetween()` returns events found in the `.ics` file; recurring rules are
-not expanded into extra occurrences.
-
-## Organizers, attendees, and alarms
-
-```php
-$organizer = $event->organizer;
-$organizer?->email;
-$organizer?->name;
-
-foreach ($event->attendees as $attendee) {
-    $attendee->email;
-    $attendee->name;
-    $attendee->role;
-    $attendee->status;
-    $attendee->rsvp;
-}
-
-foreach ($event->alarms as $alarm) {
-    $alarm->action;
-    $alarm->description;
-    $alarm->trigger?->duration();
-    $alarm->trigger?->dateTime();
-}
-```
-
-## Properties and components
-
-Use properties and components when the data you need does not have a dedicated Event field.
-
-```php
-$summaryProperty = $event->property('SUMMARY');
-$rules = $event->properties('RRULE');
-$hasLocation = $event->hasProperty('LOCATION');
-
 $freeBusy = $calendar->component('VFREEBUSY');
-$todos = $calendar->components('VTODO');
-$hasTimezones = $calendar->hasComponent('VTIMEZONE');
-
-$periods = $freeBusy?->properties('FREEBUSY');
-$busyType = $periods?->first()?->parameter('FBTYPE');
+$customProperty = $calendar->property('X-CUSTOM');
+$json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-Property and component names are not case-sensitive. `property()` and `component()` return
-the first match; `properties()` and `components()` return every match.
+UID matching is case-sensitive. Collections preserve document order. Event range queries use
+the event components present in the `.ics` input, while recurrence rules and dates remain
+available as properties.
 
 ## Validation and warnings
 
@@ -146,28 +113,21 @@ try {
 $warnings = $calendar->warnings();
 ```
 
-Use `issues()` when invalid content is rejected. Use `warnings()` after a successful read to
-find content or configuration that may need attention.
+`issues()` explains rejected content. `warnings()` reports readable content or configuration
+that needs attention.
 
-## Arrays and JSON
+## Performance and security
 
-```php
-$data = $calendar->toArray();
-$json = $calendar->toJson(JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-$tree = $calendar->toComponentArray();
-```
+Keep `max_bytes` appropriate for the largest calendar your application accepts. Use trusted
+local paths with `fromPath()`, close caller-owned streams, escape calendar text before display,
+validate calendar URLs before navigation, and avoid logging complete input or output that may
+contain personal data.
 
-`toArray()` and `toJson()` contain common calendar and event data. `toComponentArray()`
-contains the complete property and component tree, including non-event and custom data.
+## Documentation
 
-## Limits and safety
-
-Input size is limited by `icalendar_reader.max_bytes`. Calendar fields may contain personal
-or user-provided text and URLs, so escape displayed text, check links before using them, and
-avoid logging complete calendar contents.
-
-For every method, field, parameter, exception, timezone note, and performance consideration,
-see the [documentation](https://mattmy.github.io/laravel-icalendar-reader-doc/).
+- [Complete documentation](https://mattmy.github.io/laravel-icalendar-reader-doc/)
+- [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md)
 
 ## License
 
