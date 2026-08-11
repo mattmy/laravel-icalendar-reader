@@ -19,6 +19,8 @@ use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Support\BoundedInputReader;
 use Mattmy\ICalendar\Support\CalendarValidator;
+use Mattmy\ICalendar\Support\ParameterName;
+use Mattmy\ICalendar\Support\PropertyName;
 use Mattmy\ICalendar\Support\TimezoneResolver;
 use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VCalendar;
@@ -277,10 +279,10 @@ final readonly class Reader
         }
 
         return new Calendar(
-            version: $this->stringProperty($component, 'VERSION'),
-            productId: $this->stringProperty($component, 'PRODID'),
-            method: $this->stringProperty($component, 'METHOD'),
-            calendarScale: $this->stringProperty($component, 'CALSCALE'),
+            version: $this->stringProperty($component, PropertyName::VERSION),
+            productId: $this->stringProperty($component, PropertyName::PRODID),
+            method: $this->stringProperty($component, PropertyName::METHOD),
+            calendarScale: $this->stringProperty($component, PropertyName::CALSCALE),
             floatingTimezone: $floatingTimezone,
             eventItems: $events,
             todoItems: $todos,
@@ -297,10 +299,10 @@ final readonly class Reader
     private function hydrateEvent(VEvent $component, string $floatingTimezone): Event
     {
         $properties = $this->hydrateProperties($component, $floatingTimezone);
-        $startProperty = $this->firstProperty($component, 'DTSTART');
-        $endProperty = $this->firstProperty($component, 'DTEND');
-        $durationProperty = $this->firstProperty($component, 'DURATION');
-        $recurrenceIdProperty = $this->firstProperty($component, 'RECURRENCE-ID');
+        $startProperty = $this->firstProperty($component, PropertyName::DTSTART);
+        $endProperty = $this->firstProperty($component, PropertyName::DTEND);
+        $durationProperty = $this->firstProperty($component, PropertyName::DURATION);
+        $recurrenceIdProperty = $this->firstProperty($component, PropertyName::RECURRENCE_ID);
         $startsAt = $this->dateTimeValue($startProperty, $floatingTimezone);
         $endsAt = $this->dateTimeValue($endProperty, $floatingTimezone);
         $allDay = $this->isDate($startProperty);
@@ -318,10 +320,10 @@ final readonly class Reader
         }
 
         return new Event(
-            uid: $this->stringProperty($component, 'UID'),
-            summary: $this->stringProperty($component, 'SUMMARY'),
-            description: $this->stringProperty($component, 'DESCRIPTION'),
-            location: $this->stringProperty($component, 'LOCATION'),
+            uid: $this->stringProperty($component, PropertyName::UID),
+            summary: $this->stringProperty($component, PropertyName::SUMMARY),
+            description: $this->stringProperty($component, PropertyName::DESCRIPTION),
+            location: $this->stringProperty($component, PropertyName::LOCATION),
             startsAt: $startsAt,
             endsAt: $endsAt,
             startIsDate: $this->isDate($startProperty),
@@ -334,35 +336,35 @@ final readonly class Reader
                 : $this->isFloating($endProperty),
             lastDay: $allDay && $endsAt !== null ? $endsAt->subDay()->startOfDay() : null,
             duration: $duration,
-            timestamp: $this->dateTimeValue($this->firstProperty($component, 'DTSTAMP'), $floatingTimezone),
-            createdAt: $this->dateTimeValue($this->firstProperty($component, 'CREATED'), $floatingTimezone),
-            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, 'LAST-MODIFIED'), $floatingTimezone),
-            status: $this->upperStringProperty($component, 'STATUS'),
-            classification: $this->upperStringProperty($component, 'CLASS'),
-            priority: $this->integerProperty($component, 'PRIORITY'),
+            timestamp: $this->dateTimeValue($this->firstProperty($component, PropertyName::DTSTAMP), $floatingTimezone),
+            createdAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::CREATED), $floatingTimezone),
+            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::LAST_MODIFIED), $floatingTimezone),
+            status: $this->upperStringProperty($component, PropertyName::STATUS),
+            classification: $this->upperStringProperty($component, PropertyName::CLASSIFICATION),
+            priority: $this->integerProperty($component, PropertyName::PRIORITY),
             recurrenceId: $this->dateTimeValue($recurrenceIdProperty, $floatingTimezone),
             recurrenceIdIsDate: $this->isDate($recurrenceIdProperty),
             recurrenceIdIsFloating: $this->isFloating($recurrenceIdProperty),
-            sequence: $this->integerProperty($component, 'SEQUENCE'),
-            url: $this->stringProperty($component, 'URL'),
-            organizer: ($organizer = $this->firstProperty($component, 'ORGANIZER')) === null
+            sequence: $this->integerProperty($component, PropertyName::SEQUENCE),
+            url: $this->stringProperty($component, PropertyName::URL),
+            organizer: ($organizer = $this->firstProperty($component, PropertyName::ORGANIZER)) === null
                 ? null
                 : $this->hydrateOrganizer($organizer),
             attendees: $this->hydrateAttendees($component),
             alarms: $this->hydrateAlarms($component, $floatingTimezone),
-            categories: collect($this->stringValues($properties, 'CATEGORIES')),
+            categories: collect($this->stringValues($properties, PropertyName::CATEGORIES)),
             allDay: $allDay,
-            geo: $this->geoValue($this->firstHydratedProperty($properties, 'GEO')),
-            transparency: $this->upperProperty($this->firstHydratedProperty($properties, 'TRANSP')),
-            comments: collect($this->textValues($properties, 'COMMENT')),
-            contacts: collect($this->textValues($properties, 'CONTACT')),
-            resources: collect($this->stringValues($properties, 'RESOURCES')),
-            recurrenceRule: $this->firstHydratedProperty($properties, 'RRULE'),
-            attachments: collect($this->hydratedProperties($properties, 'ATTACH')),
-            exceptionDates: collect($this->hydratedProperties($properties, 'EXDATE')),
-            requestStatuses: collect($this->hydratedProperties($properties, 'REQUEST-STATUS')),
-            relatedTo: collect($this->hydratedProperties($properties, 'RELATED-TO')),
-            recurrenceDates: collect($this->hydratedProperties($properties, 'RDATE')),
+            geo: $this->geoValue($this->firstHydratedProperty($properties, PropertyName::GEO)),
+            transparency: $this->upperProperty($this->firstHydratedProperty($properties, PropertyName::TRANSP)),
+            comments: collect($this->textValues($properties, PropertyName::COMMENT)),
+            contacts: collect($this->textValues($properties, PropertyName::CONTACT)),
+            resources: collect($this->stringValues($properties, PropertyName::RESOURCES)),
+            recurrenceRule: $this->firstHydratedProperty($properties, PropertyName::RRULE),
+            attachments: collect($this->hydratedProperties($properties, PropertyName::ATTACH)),
+            exceptionDates: collect($this->hydratedProperties($properties, PropertyName::EXDATE)),
+            requestStatuses: collect($this->hydratedProperties($properties, PropertyName::REQUEST_STATUS)),
+            relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
+            recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
             propertyItems: $properties,
             component: clone $component,
         );
@@ -372,10 +374,10 @@ final readonly class Reader
     private function hydrateTodo(VTodo $component, string $floatingTimezone): Todo
     {
         $properties = $this->hydrateProperties($component, $floatingTimezone);
-        $startProperty = $this->firstProperty($component, 'DTSTART');
-        $dueProperty = $this->firstProperty($component, 'DUE');
-        $durationProperty = $this->firstProperty($component, 'DURATION');
-        $recurrenceIdProperty = $this->firstProperty($component, 'RECURRENCE-ID');
+        $startProperty = $this->firstProperty($component, PropertyName::DTSTART);
+        $dueProperty = $this->firstProperty($component, PropertyName::DUE);
+        $durationProperty = $this->firstProperty($component, PropertyName::DURATION);
+        $recurrenceIdProperty = $this->firstProperty($component, PropertyName::RECURRENCE_ID);
         $startsAt = $this->dateTimeValue($startProperty, $floatingTimezone);
         $dueAt = $this->dateTimeValue($dueProperty, $floatingTimezone);
         $duration = $durationProperty instanceof DurationProperty
@@ -389,12 +391,12 @@ final readonly class Reader
         }
 
         return new Todo(
-            uid: $this->stringProperty($component, 'UID'),
-            timestamp: $this->dateTimeValue($this->firstProperty($component, 'DTSTAMP'), $floatingTimezone),
-            classification: $this->upperStringProperty($component, 'CLASS'),
-            completedAt: $this->dateTimeValue($this->firstProperty($component, 'COMPLETED'), $floatingTimezone),
-            createdAt: $this->dateTimeValue($this->firstProperty($component, 'CREATED'), $floatingTimezone),
-            description: $this->stringProperty($component, 'DESCRIPTION'),
+            uid: $this->stringProperty($component, PropertyName::UID),
+            timestamp: $this->dateTimeValue($this->firstProperty($component, PropertyName::DTSTAMP), $floatingTimezone),
+            classification: $this->upperStringProperty($component, PropertyName::CLASSIFICATION),
+            completedAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::COMPLETED), $floatingTimezone),
+            createdAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::CREATED), $floatingTimezone),
+            description: $this->stringProperty($component, PropertyName::DESCRIPTION),
             startsAt: $startsAt,
             startIsDate: $this->isDate($startProperty),
             startIsFloating: $this->isFloating($startProperty),
@@ -406,33 +408,33 @@ final readonly class Reader
                 ? $this->isFloating($startProperty)
                 : $this->isFloating($dueProperty),
             duration: $duration,
-            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, 'LAST-MODIFIED'), $floatingTimezone),
-            location: $this->stringProperty($component, 'LOCATION'),
-            organizer: ($organizer = $this->firstProperty($component, 'ORGANIZER')) === null
+            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::LAST_MODIFIED), $floatingTimezone),
+            location: $this->stringProperty($component, PropertyName::LOCATION),
+            organizer: ($organizer = $this->firstProperty($component, PropertyName::ORGANIZER)) === null
                 ? null
                 : $this->hydrateOrganizer($organizer),
-            percentComplete: $this->integerProperty($component, 'PERCENT-COMPLETE'),
-            priority: $this->integerProperty($component, 'PRIORITY'),
+            percentComplete: $this->integerProperty($component, PropertyName::PERCENT_COMPLETE),
+            priority: $this->integerProperty($component, PropertyName::PRIORITY),
             recurrenceId: $this->dateTimeValue($recurrenceIdProperty, $floatingTimezone),
             recurrenceIdIsDate: $this->isDate($recurrenceIdProperty),
             recurrenceIdIsFloating: $this->isFloating($recurrenceIdProperty),
-            sequence: $this->integerProperty($component, 'SEQUENCE'),
-            status: $this->upperStringProperty($component, 'STATUS'),
-            summary: $this->stringProperty($component, 'SUMMARY'),
-            url: $this->stringProperty($component, 'URL'),
+            sequence: $this->integerProperty($component, PropertyName::SEQUENCE),
+            status: $this->upperStringProperty($component, PropertyName::STATUS),
+            summary: $this->stringProperty($component, PropertyName::SUMMARY),
+            url: $this->stringProperty($component, PropertyName::URL),
             attendees: $this->hydrateAttendees($component),
-            categories: collect($this->stringValues($properties, 'CATEGORIES')),
+            categories: collect($this->stringValues($properties, PropertyName::CATEGORIES)),
             alarms: $this->hydrateAlarms($component, $floatingTimezone),
-            geo: $this->geoValue($this->firstHydratedProperty($properties, 'GEO')),
-            comments: collect($this->textValues($properties, 'COMMENT')),
-            contacts: collect($this->textValues($properties, 'CONTACT')),
-            resources: collect($this->stringValues($properties, 'RESOURCES')),
-            recurrenceRule: $this->firstHydratedProperty($properties, 'RRULE'),
-            attachments: collect($this->hydratedProperties($properties, 'ATTACH')),
-            exceptionDates: collect($this->hydratedProperties($properties, 'EXDATE')),
-            requestStatuses: collect($this->hydratedProperties($properties, 'REQUEST-STATUS')),
-            relatedTo: collect($this->hydratedProperties($properties, 'RELATED-TO')),
-            recurrenceDates: collect($this->hydratedProperties($properties, 'RDATE')),
+            geo: $this->geoValue($this->firstHydratedProperty($properties, PropertyName::GEO)),
+            comments: collect($this->textValues($properties, PropertyName::COMMENT)),
+            contacts: collect($this->textValues($properties, PropertyName::CONTACT)),
+            resources: collect($this->stringValues($properties, PropertyName::RESOURCES)),
+            recurrenceRule: $this->firstHydratedProperty($properties, PropertyName::RRULE),
+            attachments: collect($this->hydratedProperties($properties, PropertyName::ATTACH)),
+            exceptionDates: collect($this->hydratedProperties($properties, PropertyName::EXDATE)),
+            requestStatuses: collect($this->hydratedProperties($properties, PropertyName::REQUEST_STATUS)),
+            relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
+            recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
             propertyItems: $properties,
             component: clone $component,
         );
@@ -447,9 +449,9 @@ final readonly class Reader
         return new Organizer(
             address: $address,
             email: $this->emailAddress($address),
-            name: $this->singleParameter($parameters, 'CN'),
-            sentBy: $this->singleParameter($parameters, 'SENT-BY'),
-            directory: $this->singleParameter($parameters, 'DIR'),
+            name: $this->singleParameter($parameters, ParameterName::CN),
+            sentBy: $this->singleParameter($parameters, ParameterName::SENT_BY),
+            directory: $this->singleParameter($parameters, ParameterName::DIR),
             parameterItems: $parameters,
         );
     }
@@ -463,17 +465,17 @@ final readonly class Reader
         return new Attendee(
             address: $address,
             email: $this->emailAddress($address),
-            name: $this->singleParameter($parameters, 'CN'),
-            role: $this->upperParameter($parameters, 'ROLE'),
-            status: $this->upperParameter($parameters, 'PARTSTAT'),
-            rsvp: match ($this->upperParameter($parameters, 'RSVP')) {
+            name: $this->singleParameter($parameters, ParameterName::CN),
+            role: $this->upperParameter($parameters, ParameterName::ROLE),
+            status: $this->upperParameter($parameters, ParameterName::PARTSTAT),
+            rsvp: match ($this->upperParameter($parameters, ParameterName::RSVP)) {
                 'TRUE' => true,
                 'FALSE' => false,
                 default => null,
             },
-            type: $this->upperParameter($parameters, 'CUTYPE'),
-            delegatedFrom: collect($this->parameterList($parameters, 'DELEGATED-FROM')),
-            delegatedTo: collect($this->parameterList($parameters, 'DELEGATED-TO')),
+            type: $this->upperParameter($parameters, ParameterName::CUTYPE),
+            delegatedFrom: collect($this->parameterList($parameters, ParameterName::DELEGATED_FROM)),
+            delegatedTo: collect($this->parameterList($parameters, ParameterName::DELEGATED_TO)),
             parameterItems: $parameters,
         );
     }
@@ -487,7 +489,7 @@ final readonly class Reader
     {
         return collect(\array_map(
             fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
-            $this->directProperties($component, 'ATTENDEE'),
+            $this->directProperties($component, PropertyName::ATTENDEE),
         ));
     }
 
@@ -512,14 +514,14 @@ final readonly class Reader
     /** Hydrate one VALARM and its typed trigger. */
     private function hydrateAlarm(SabreComponent $component, string $floatingTimezone): Alarm
     {
-        $triggerProperty = $this->firstProperty($component, 'TRIGGER');
+        $triggerProperty = $this->firstProperty($component, PropertyName::TRIGGER);
         $trigger = null;
 
         if ($triggerProperty instanceof DurationProperty) {
             $trigger = new AlarmTrigger(
                 relativeDuration: $triggerProperty->getDateInterval(),
                 absoluteDateTime: null,
-                relation: $this->upperParameter($this->parameters($triggerProperty), 'RELATED') ?? 'START',
+                relation: $this->upperParameter($this->parameters($triggerProperty), ParameterName::RELATED) ?? 'START',
             );
         } elseif ($triggerProperty instanceof DateTimeProperty) {
             $trigger = new AlarmTrigger(
@@ -530,16 +532,16 @@ final readonly class Reader
         }
 
         return new Alarm(
-            action: $this->upperStringProperty($component, 'ACTION'),
+            action: $this->upperStringProperty($component, PropertyName::ACTION),
             trigger: $trigger,
-            description: $this->stringProperty($component, 'DESCRIPTION'),
-            summary: $this->stringProperty($component, 'SUMMARY'),
+            description: $this->stringProperty($component, PropertyName::DESCRIPTION),
+            summary: $this->stringProperty($component, PropertyName::SUMMARY),
             attendees: collect(\array_map(
                 fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
-                $this->directProperties($component, 'ATTENDEE'),
+                $this->directProperties($component, PropertyName::ATTENDEE),
             )),
-            repeat: $this->integerProperty($component, 'REPEAT'),
-            duration: ($duration = $this->firstProperty($component, 'DURATION')) instanceof DurationProperty
+            repeat: $this->integerProperty($component, PropertyName::REPEAT),
+            duration: ($duration = $this->firstProperty($component, PropertyName::DURATION)) instanceof DurationProperty
                 ? $duration->getDateInterval()
                 : null,
         );
@@ -602,7 +604,7 @@ final readonly class Reader
             return true;
         }
 
-        return $property['TZID'] === null
+        return $property[ParameterName::TZID] === null
             && ! \str_ends_with(\strtoupper($property->getRawMimeDirValue()), 'Z');
     }
 
@@ -968,7 +970,7 @@ final readonly class Reader
     /** Determine whether a date-time property has an exact or calendar-defined timezone. */
     private function hasResolvableTimezone(DateTimeProperty $property): bool
     {
-        $parameter = $property['TZID'];
+        $parameter = $property[ParameterName::TZID];
 
         if ($parameter === null) {
             return true;

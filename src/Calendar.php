@@ -12,6 +12,7 @@ use InvalidArgumentException;
 use JsonException;
 use JsonSerializable;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Mattmy\ICalendar\Support\PropertyName;
 use Sabre\VObject\Component\VCalendar;
 
 /**
@@ -96,7 +97,7 @@ final readonly class Calendar implements JsonSerializable
             if ($event->uid === $uid) {
                 $firstMatch ??= $event;
 
-                if (! $event->hasProperty('RECURRENCE-ID')) {
+                if (! $event->hasProperty(PropertyName::RECURRENCE_ID)) {
                     return $event;
                 }
             }
@@ -138,7 +139,7 @@ final readonly class Calendar implements JsonSerializable
             if ($todo->uid === $uid) {
                 $firstMatch ??= $todo;
 
-                if (! $todo->hasProperty('RECURRENCE-ID')) {
+                if (! $todo->hasProperty(PropertyName::RECURRENCE_ID)) {
                     return $todo;
                 }
             }
