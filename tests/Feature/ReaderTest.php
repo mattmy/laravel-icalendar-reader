@@ -8,6 +8,8 @@ use Mattmy\ICalendar\Exceptions\CalendarTooLarge;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Facades\ICalendar;
+use Mattmy\ICalendar\Support\ParameterName;
+use Mattmy\ICalendar\Support\PropertyName;
 use Sabre\VObject\ParseException;
 
 it('reads and validates a calendar through the facade', function () {
@@ -36,6 +38,32 @@ it('identifies all-day events from the DTSTART value type', function () {
         ->and($event->isAllDay())->toBe($event->allDay)
         ->and($event->startsAt?->timezoneName)->toBe('Asia/Taipei')
         ->and($event->startsAt?->toDateString())->toBe('2026-08-03');
+});
+
+it('uses centralized names for known properties and parameters', function () {
+    expect(PropertyName::SUMMARY)->toBe('SUMMARY')
+        ->and(PropertyName::PERCENT_COMPLETE)->toBe('PERCENT-COMPLETE')
+        ->and(ParameterName::CN)->toBe('CN')
+        ->and(ParameterName::ROLE)->toBe('ROLE');
+
+    $todo = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Protocol Name Tests//EN
+BEGIN:VTODO
+UID:protocol-names@example.test
+DTSTAMP:20260801T000000Z
+SUMMARY:Centralized names
+PERCENT-COMPLETE:50
+ATTENDEE;CN=Example;ROLE=REQ-PARTICIPANT:mailto:example@example.test
+END:VTODO
+END:VCALENDAR
+ICS)->todos()->sole();
+
+    expect($todo->summary)->toBe('Centralized names')
+        ->and($todo->percentComplete)->toBe(50)
+        ->and($todo->attendees->sole()->name)->toBe('Example')
+        ->and($todo->attendees->sole()->role)->toBe('REQ-PARTICIPANT');
 });
 
 it('filters events by exact case-sensitive UID in document order', function () {
