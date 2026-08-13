@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [0.2.0] - 2026-08-13
+
+### Added
+
+- `Calendar::occurrencesBetween()` for querying concrete event occurrences in a half-open date range.
+- Recurrence expansion for `RRULE` and `RDATE`, with `EXDATE`, overrides, and cancellations applied.
+- Carbon and native `DateTimeInterface` boundary support without mutating the supplied date-time objects.
+- `UnsupportedRecurrence` and `RecurrenceLimitExceeded` exceptions for unsafe recurrence forms and the 3,500-candidate query limit.
+- A recurring-event fixture covering inclusion, exclusion, overrides, cancellations, one-time events, and all-day events.
+
 ## [0.1.0] - 2026-08-11
 
 ### Added
@@ -19,3 +29,4 @@ All notable changes to this project are documented here. The format follows Keep
 - Self-contained interoperability fixtures, bilingual guides, and a repeatable benchmark command.
 
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0
+[0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
