@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use Carbon\CarbonImmutable;
 use Closure;
 use DateInterval;
+use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
 use Illuminate\Support\Collection;
@@ -23,6 +24,7 @@ use Sabre\VObject\InvalidDataException;
 use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
+use Sabre\VObject\Property\ICalendar\Period as PeriodProperty;
 use Sabre\VObject\Recur\EventIterator;
 use Sabre\VObject\Recur\MaxInstancesExceededException;
 use Sabre\VObject\Recur\NoInstancesException;
@@ -37,7 +39,7 @@ use Sabre\VObject\Recur\NoInstancesException;
  * @phpstan-type OrganizerArray array{address: string, email: ?string, name: ?string, sent_by: ?string, directory: ?string, parameters: ParameterMap}
  * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
  * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
- * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, repeat: ?int, duration: ?string}
+ * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, attachments: list<PropertyArray>, repeat: ?int, duration: ?string}
  * @phpstan-type GeoArray array{latitude: float, longitude: float}
  * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>, geo: ?GeoArray, transparency: ?string, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
  * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>, geo: ?GeoArray, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
@@ -255,19 +257,41 @@ final readonly class Calendar implements JsonSerializable
 
             $seen = [];
             $sequence = 0;
+            $exclusions = $this->recurrenceExclusions($master['component'], $timezone);
+
+            $this->appendPeriodOccurrences(
+                events: $events,
+                master: $master,
+                timezone: $timezone,
+                exclusions: $exclusions,
+                seen: $seen,
+                candidateCount: $candidateCount,
+                sequence: $sequence,
+                fromTimestamp: $fromTimestamp,
+                untilTimestamp: $untilTimestamp,
+                occurrences: $occurrences,
+            );
 
             foreach ($this->recurrenceSources($events, $master) as $source) {
                 try {
                     $iterator = new EventIterator($source, null, $timezone);
+                    $iterator->fastForward((new DateTimeImmutable('@' . $fromTimestamp))->setTimezone($timezone));
+                    $this->countCandidates($candidateCount, $iterator->key());
 
                     while ($iterator->valid()) {
+                        $start = $iterator->getDtStart();
+
+                        if ($start === null || $start->getTimestamp() >= $untilTimestamp) {
+                            break;
+                        }
+
+                        $this->countCandidate($candidateCount);
                         $component = clone $iterator->getEventObject();
                         $this->ensureRecurrenceId($component);
                         $key = $this->recurrenceKey($component, $timezone);
 
-                        if (! isset($seen[$key])) {
+                        if (! isset($exclusions[$key]) && ! isset($seen[$key])) {
                             $seen[$key] = true;
-                            $this->countCandidate($candidateCount);
                             $this->removeRecurrenceGenerators($component);
                             $this->appendOccurrence(
                                 component: $component,
@@ -285,13 +309,19 @@ final readonly class Calendar implements JsonSerializable
                     throw $exception;
                 } catch (NoInstancesException) {
                     continue;
-                } catch (MaxInstancesExceededException|InvalidDataException $exception) {
+                } catch (MaxInstancesExceededException $exception) {
+                    throw new RecurrenceLimitExceeded(
+                        'The recurrence query exceeds its 3500-candidate limit. Narrow the date range.',
+                        previous: $exception,
+                    );
+                } catch (InvalidDataException $exception) {
                     throw new UnsupportedRecurrence(
                         'The recurrence for UID ' . ((string) $this->rawProperty($master['component'], PropertyName::UID)) . ' cannot be expanded safely.',
                         $exception,
                     );
                 }
             }
+
         }
 
         \usort($occurrences, static function (array $left, array $right): int {
@@ -518,6 +548,18 @@ final readonly class Calendar implements JsonSerializable
         }
     }
 
+    /** Count recurrence work skipped by an iterator fast-forward. */
+    private function countCandidates(int &$candidateCount, int $amount): void
+    {
+        $candidateCount += $amount;
+
+        if ($candidateCount > self::MAX_RECURRENCE_CANDIDATES) {
+            throw new RecurrenceLimitExceeded(
+                'The recurrence query exceeds its 3500-candidate limit. Narrow the date range.',
+            );
+        }
+    }
+
     /**
      * Build one Sabre iterator source per inclusion type so RRULE and RDATE form a union.
      *
@@ -528,16 +570,20 @@ final readonly class Calendar implements JsonSerializable
     private function recurrenceSources(array $events, array $master): array
     {
         $hasRule = isset($master['component']->{PropertyName::RRULE});
-        $hasDates = isset($master['component']->{PropertyName::RDATE});
+        $hasDates = $this->hasDateRDates($master['component']);
+        $sources = [];
 
-        if (! $hasRule || ! $hasDates) {
-            return [[...\array_column($events, 'component')]];
+        if ($hasRule) {
+            $sources[] = $this->recurrenceSource($events, keepRule: true, keepDates: false);
         }
 
-        return [
-            $this->recurrenceSource($events, remove: PropertyName::RDATE),
-            $this->recurrenceSource($events, remove: PropertyName::RRULE),
-        ];
+        if ($hasDates) {
+            $sources[] = $this->recurrenceSource($events, keepRule: false, keepDates: true);
+        }
+
+        return $sources === []
+            ? [$this->recurrenceSource($events, keepRule: false, keepDates: false)]
+            : $sources;
     }
 
     /**
@@ -546,21 +592,140 @@ final readonly class Calendar implements JsonSerializable
      * @param  list<array{component: VEvent, ordinal: int}>  $events
      * @return list<VEvent>
      */
-    private function recurrenceSource(array $events, string $remove): array
+    private function recurrenceSource(array $events, bool $keepRule, bool $keepDates): array
     {
         $source = [];
 
         foreach ($events as $event) {
             $component = clone $event['component'];
+            unset($component->{PropertyName::EXDATE});
 
             if (! isset($component->{PropertyName::RECURRENCE_ID})) {
-                unset($component->{$remove});
+                if (! $keepRule) {
+                    unset($component->{PropertyName::RRULE});
+                }
+
+                foreach ($component->select(PropertyName::RDATE) as $property) {
+                    if (! $keepDates || $property instanceof PeriodProperty) {
+                        $component->remove($property);
+                    }
+                }
             }
 
             $source[] = $component;
         }
 
         return $source;
+    }
+
+    /** Determine whether a master has DATE or DATE-TIME RDATE inclusions. */
+    private function hasDateRDates(VEvent $master): bool
+    {
+        foreach ($master->select(PropertyName::RDATE) as $property) {
+            if ($property instanceof DateTimeProperty) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<string, true> */
+    private function recurrenceExclusions(VEvent $master, DateTimeZone $timezone): array
+    {
+        $exclusions = [];
+
+        foreach ($master->select(PropertyName::EXDATE) as $property) {
+            if (! $property instanceof DateTimeProperty) {
+                continue;
+            }
+
+            foreach ($property->getDateTimes($timezone) as $dateTime) {
+                if ($dateTime instanceof DateTimeInterface) {
+                    $exclusions['T:' . $dateTime->format('U.u')] = true;
+                }
+            }
+        }
+
+        return $exclusions;
+    }
+
+    /**
+     * Add explicit PERIOD RDATE inclusions to the shared recurrence pipeline.
+     *
+     * @param  list<array{component: VEvent, ordinal: int}>  $events
+     * @param  array{component: VEvent, ordinal: int}  $master
+     * @param  array<string, true>  $exclusions
+     * @param  array<string, true>  $seen
+     * @param  list<array{event: Event, masterOrdinal: int, sequence: int}>  $occurrences
+     */
+    private function appendPeriodOccurrences(
+        array $events,
+        array $master,
+        DateTimeZone $timezone,
+        array $exclusions,
+        array &$seen,
+        int &$candidateCount,
+        int &$sequence,
+        int $fromTimestamp,
+        int $untilTimestamp,
+        array &$occurrences,
+    ): void {
+        $overrides = [];
+
+        foreach ($events as $event) {
+            if ($this->rawProperty($event['component'], PropertyName::RECURRENCE_ID) !== null) {
+                $overrides[$this->recurrenceKey($event['component'], $timezone)] = $event['component'];
+            }
+        }
+
+        foreach ($master['component']->select(PropertyName::RDATE) as $property) {
+            if (! $property instanceof PeriodProperty) {
+                continue;
+            }
+
+            foreach ($property->getParts() as $period) {
+                $this->countCandidate($candidateCount);
+                [$start, $end] = \explode('/', (string) $period, 2);
+                $component = clone $master['component'];
+                $this->removeRecurrenceGenerators($component);
+                $this->setDateTimeProperty($component, PropertyName::DTSTART, $start, $property);
+                unset($component->{PropertyName::DTEND}, $component->{PropertyName::DURATION}, $component->{PropertyName::RECURRENCE_ID});
+
+                if (\str_starts_with($end, 'P') || \str_starts_with($end, '+P')) {
+                    $component->add(PropertyName::DURATION, $end);
+                } else {
+                    $this->setDateTimeProperty($component, PropertyName::DTEND, $end, $property);
+                }
+
+                $this->ensureRecurrenceId($component);
+                $key = $this->recurrenceKey($component, $timezone);
+
+                if (isset($exclusions[$key]) || isset($seen[$key])) {
+                    continue;
+                }
+
+                $seen[$key] = true;
+                $effective = isset($overrides[$key]) ? clone $overrides[$key] : $component;
+                $this->removeRecurrenceGenerators($effective);
+                $this->appendOccurrence(
+                    component: $effective,
+                    masterOrdinal: $master['ordinal'],
+                    sequence: $sequence++,
+                    fromTimestamp: $fromTimestamp,
+                    untilTimestamp: $untilTimestamp,
+                    occurrences: $occurrences,
+                );
+            }
+        }
+    }
+
+    /** Copy one PERIOD endpoint into a concrete VEVENT date-time property. */
+    private function setDateTimeProperty(VEvent $component, string $name, string $value, PeriodProperty $period): void
+    {
+        $component->remove($name);
+        $tzid = $period['TZID'];
+        $component->add($name, $value, $tzid instanceof Parameter ? ['TZID' => (string) $tzid] : []);
     }
 
     /**
@@ -614,7 +779,7 @@ final readonly class Calendar implements JsonSerializable
         }
 
         try {
-            return $recurrenceId->getDateTime($timezone)?->format('U.u') ?? (string) $recurrenceId;
+            return 'T:' . ($recurrenceId->getDateTime($timezone)?->format('U.u') ?? (string) $recurrenceId);
         } catch (InvalidDataException $exception) {
             throw new UnsupportedRecurrence('A RECURRENCE-ID cannot be resolved safely.', $exception);
         }
@@ -807,6 +972,7 @@ final readonly class Calendar implements JsonSerializable
             'description' => $alarm->description,
             'summary' => $alarm->summary,
             'attendees' => \array_values($alarm->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
+            'attachments' => \array_values($alarm->attachments->map(static fn (Property $property): array => $property->toArray())->all()),
             'repeat' => $alarm->repeat,
             'duration' => self::durationString($alarm->duration),
         ];

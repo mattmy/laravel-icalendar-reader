@@ -23,14 +23,17 @@ use Mattmy\ICalendar\Support\ParameterName;
 use Mattmy\ICalendar\Support\PropertyName;
 use Mattmy\ICalendar\Support\TimezoneResolver;
 use Sabre\VObject\Component as SabreComponent;
+use Sabre\VObject\Component\VAlarm;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Component\VTodo;
+use Sabre\VObject\DateTimeParser;
+use Sabre\VObject\InvalidDataException;
 use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
 use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
-use Sabre\VObject\TimeZoneUtil;
+use Sabre\VObject\Recur\RRuleIterator;
 
 /**
  * Read, validate, and hydrate iCalendar input from explicit source types.
@@ -504,7 +507,7 @@ final readonly class Reader
         $alarms = [];
 
         foreach ($component->children() as $child) {
-            if ($child instanceof SabreComponent && \strtoupper($child->name) === 'VALARM') {
+            if ($child instanceof VAlarm) {
                 $alarms[] = $this->hydrateAlarm($child, $floatingTimezone);
             }
         }
@@ -513,8 +516,9 @@ final readonly class Reader
     }
 
     /** Hydrate one VALARM and its typed trigger. */
-    private function hydrateAlarm(SabreComponent $component, string $floatingTimezone): Alarm
+    private function hydrateAlarm(VAlarm $component, string $floatingTimezone): Alarm
     {
+        $properties = $this->hydrateProperties($component, $floatingTimezone);
         $triggerProperty = $this->firstProperty($component, PropertyName::TRIGGER);
         $trigger = null;
 
@@ -541,10 +545,13 @@ final readonly class Reader
                 fn (SabreProperty $property): Attendee => $this->hydrateAttendee($property),
                 $this->directProperties($component, PropertyName::ATTENDEE),
             )),
+            attachments: collect($this->hydratedProperties($properties, PropertyName::ATTACH)),
             repeat: $this->integerProperty($component, PropertyName::REPEAT),
             duration: ($duration = $this->firstProperty($component, PropertyName::DURATION)) instanceof DurationProperty
                 ? $duration->getDateInterval()
                 : null,
+            propertyItems: $properties,
+            component: clone $component,
         );
     }
 
@@ -589,7 +596,7 @@ final readonly class Reader
             return null;
         }
 
-        $dateTime = $property->getDateTime(new DateTimeZone($floatingTimezone));
+        $dateTime = $this->dateTimes($property, $floatingTimezone)[0] ?? null;
 
         return $dateTime === null ? null : CarbonImmutable::instance($dateTime);
     }
@@ -823,7 +830,7 @@ final readonly class Reader
             name: \strtoupper($component->name),
             propertyItems: $this->hydrateProperties($component, $floatingTimezone),
             componentItems: $components,
-            component: clone $component,
+            component: $component,
         );
     }
 
@@ -888,10 +895,10 @@ final readonly class Reader
                 ));
             }
 
-            return \array_values(\array_map(
-                static fn (DateTimeInterface|DateInterval $value): CarbonImmutable|DateInterval => $value instanceof DateTimeInterface ? CarbonImmutable::instance($value) : $value,
-                $property->getDateTimes(new DateTimeZone($floatingTimezone)),
-            ));
+            return \array_map(
+                static fn (DateTimeInterface $value): CarbonImmutable => CarbonImmutable::instance($value),
+                $this->dateTimes($property, $floatingTimezone),
+            );
         }
 
         if ($property instanceof DurationProperty) {
@@ -987,18 +994,195 @@ final readonly class Reader
             return false;
         }
 
+        $definition = $this->matchingTimezone($property, $timezone);
+
+        if ($definition === null) {
+            return false;
+        }
+
+        foreach ($property->getParts() as $part) {
+            if ($this->timezoneOffsetAt($definition, (string) $part) === null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Resolve all values, preferring a matching VTIMEZONE over host tzdata.
+     *
+     * @return list<DateTimeInterface>
+     */
+    private function dateTimes(DateTimeProperty $property, string $floatingTimezone): array
+    {
+        $parameter = $property[ParameterName::TZID];
+
+        if (! $parameter instanceof Parameter) {
+            return \array_values(\array_filter(
+                $property->getDateTimes(new DateTimeZone($floatingTimezone)),
+                static fn (mixed $value): bool => $value instanceof DateTimeInterface,
+            ));
+        }
+
+        $timezone = $parameter->getValue();
+
+        if (! \is_string($timezone)) {
+            return [];
+        }
+
+        $definition = $this->matchingTimezone($property, $timezone);
+
+        if ($definition === null) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach ($property->getParts() as $part) {
+            $raw = (string) $part;
+            $offset = $this->timezoneOffsetAt($definition, $raw);
+
+            if ($offset === null) {
+                return [];
+            }
+
+            $resolved = new DateTimeZone($offset);
+
+            try {
+                $candidate = new DateTimeZone($timezone);
+
+                if (DateTimeParser::parseDateTime($raw, $candidate)->format('P') === $offset) {
+                    $resolved = $candidate;
+                }
+            } catch (\Exception) {
+                // The calendar offset remains authoritative when no equivalent host zone exists.
+            }
+
+            $values[] = DateTimeParser::parseDateTime($raw, $resolved);
+        }
+
+        return $values;
+    }
+
+    /** Find the same-calendar VTIMEZONE definition for a TZID. */
+    private function matchingTimezone(DateTimeProperty $property, string $timezone): ?SabreComponent
+    {
         $root = $property->parent;
 
         while ($root?->parent !== null) {
             $root = $root->parent;
         }
 
-        try {
-            TimeZoneUtil::getTimeZone($timezone, $root instanceof VCalendar ? $root : null, true);
-
-            return true;
-        } catch (\InvalidArgumentException) {
-            return false;
+        if (! $root instanceof VCalendar) {
+            return null;
         }
+
+        foreach ($root->select('VTIMEZONE') as $definition) {
+            if ($definition instanceof SabreComponent && (string) ($definition->TZID ?? '') === $timezone) {
+                return $definition;
+            }
+        }
+
+        return null;
+    }
+
+    /** Resolve the effective observance offset for one local calendar date-time. */
+    private function timezoneOffsetAt(SabreComponent $definition, string $raw): ?string
+    {
+        try {
+            $target = DateTimeParser::parseDateTime($raw);
+        } catch (InvalidDataException) {
+            return null;
+        }
+
+        $effectiveAt = null;
+        $effectiveOffset = null;
+        $initialAt = null;
+        $initialOffset = null;
+
+        foreach ($definition->children() as $observance) {
+            if (! $observance instanceof SabreComponent || ! \in_array($observance->name, ['STANDARD', 'DAYLIGHT'], true)) {
+                continue;
+            }
+
+            $startProperty = $this->firstProperty($observance, PropertyName::DTSTART);
+            $offsetTo = $this->firstProperty($observance, 'TZOFFSETTO');
+            $offsetFrom = $this->firstProperty($observance, 'TZOFFSETFROM');
+
+            if (! $startProperty instanceof DateTimeProperty || $offsetTo === null || $offsetFrom === null) {
+                continue;
+            }
+
+            try {
+                $start = DateTimeParser::parseDateTime((string) $startProperty);
+            } catch (InvalidDataException) {
+                continue;
+            }
+
+            if ($initialAt === null || $start < $initialAt) {
+                $initialAt = $start;
+                $initialOffset = $this->normalizeUtcOffset((string) $offsetFrom);
+            }
+
+            $transitions = [$start];
+
+            foreach ($observance->select(PropertyName::RRULE) as $rule) {
+                if (! $rule instanceof SabreProperty) {
+                    continue;
+                }
+
+                try {
+                    $iterator = new RRuleIterator($rule->getParts(), $start);
+                    $count = 0;
+
+                    while ($iterator->valid() && $count++ < 3500) {
+                        $transition = $iterator->current();
+
+                        if (! $transition instanceof DateTimeInterface || $transition > $target) {
+                            break;
+                        }
+
+                        $transitions[] = $transition;
+                        $iterator->next();
+                    }
+
+                    if ($iterator->valid() && $iterator->current() <= $target) {
+                        return null;
+                    }
+                } catch (InvalidDataException) {
+                    continue;
+                }
+            }
+
+            foreach ($observance->select(PropertyName::RDATE) as $date) {
+                if ($date instanceof DateTimeProperty) {
+                    $transitions = [...$transitions, ...$date->getDateTimes(new DateTimeZone('UTC'))];
+                }
+            }
+
+            foreach ($transitions as $transition) {
+                if ($transition <= $target && ($effectiveAt === null || $transition > $effectiveAt)) {
+                    $effectiveAt = $transition;
+                    $effectiveOffset = $this->normalizeUtcOffset((string) $offsetTo);
+                }
+            }
+        }
+
+        return $effectiveOffset ?? $initialOffset;
+    }
+
+    /** Convert RFC UTC-OFFSET syntax to a PHP fixed-offset timezone name. */
+    private function normalizeUtcOffset(string $offset): ?string
+    {
+        if (! \preg_match('/^([+-])(\d{2})(\d{2})(\d{2})?$/', $offset, $parts)) {
+            return null;
+        }
+
+        if (($parts[4] ?? '00') !== '00') {
+            return null;
+        }
+
+        return $parts[1] . $parts[2] . ':' . $parts[3];
     }
 }

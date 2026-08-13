@@ -1,2 +1,2 @@
-tests/Fixtures/text/unicode-folded-lf.ics text eol=lf
+* text=auto eol=lf
 tests/Fixtures/text/unicode-folded-crlf.ics text eol=crlf
