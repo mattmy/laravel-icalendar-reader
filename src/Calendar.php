@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar;
 
-use Carbon\CarbonImmutable;
 use Closure;
-use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
@@ -17,6 +15,7 @@ use JsonSerializable;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
+use Mattmy\ICalendar\Support\CalendarSerializer;
 use Mattmy\ICalendar\Support\PropertyName;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
@@ -76,6 +75,7 @@ final readonly class Calendar implements JsonSerializable
         private array $componentItems,
         private VCalendar $component,
         private Closure $eventHydrator,
+        private CalendarSerializer $serializer = new CalendarSerializer(),
     ) {}
 
     /**
@@ -396,55 +396,27 @@ final readonly class Calendar implements JsonSerializable
     /**
      * Export the complete normalized component tree without collapsing repeated data.
      *
-     * @return ComponentArray
+     * @return array<string, mixed>
      */
     public function toComponentArray(): array
     {
-        return [
-            'name' => 'VCALENDAR',
-            'properties' => \array_map(
-                fn (Property $property): array => $property->toArray(),
-                $this->propertyItems,
-            ),
-            'components' => \array_map(
-                fn (Component $component): array => $this->componentArray($component),
-                $this->componentItems,
-            ),
-        ];
+        return $this->serializer->componentArray($this);
     }
 
     /**
      * Convert the calendar to its current domain-oriented representation.
      *
-     * @return CalendarArray
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
-        return [
-            'version' => $this->version,
-            'product_id' => $this->productId,
-            'method' => $this->method,
-            'calendar_scale' => $this->calendarScale,
-            'floating_timezone' => $this->floatingTimezone,
-            'events' => \array_map(
-                fn (Event $event): array => $this->eventArray($event),
-                $this->eventItems,
-            ),
-            'todos' => \array_map(
-                fn (Todo $todo): array => $this->todoArray($todo),
-                $this->todoItems,
-            ),
-            'warnings' => \array_map(
-                static fn (CalendarIssue $issue): array => $issue->toArray(),
-                $this->warningItems,
-            ),
-        ];
+        return $this->serializer->toArray($this);
     }
 
     /**
      * Return data suitable for JSON encoding.
      *
-     * @return CalendarArray
+     * @return array<string, mixed>
      */
     public function jsonSerialize(): array
     {
@@ -817,228 +789,6 @@ final readonly class Calendar implements JsonSerializable
     }
 
     /**
-     * Convert one event for the Calendar output contract.
-     *
-     * @return EventArray
-     */
-    private function eventArray(Event $event): array
-    {
-        return [
-            'uid' => $event->uid,
-            'summary' => $event->summary,
-            'description' => $event->description,
-            'location' => $event->location,
-            'starts_at' => self::dateTimeString($event->startsAt, $event->startIsDate),
-            'ends_at' => self::dateTimeString($event->endsAt, $event->endIsDate),
-            'start_is_date' => $event->startIsDate,
-            'end_is_date' => $event->endIsDate,
-            'start_is_floating' => $event->startIsFloating,
-            'end_is_floating' => $event->endIsFloating,
-            'is_all_day' => $event->allDay,
-            'last_day' => $event->lastDay?->toDateString(),
-            'duration' => self::durationString($event->duration),
-            'timestamp' => $event->timestamp?->toIso8601String(),
-            'created_at' => $event->createdAt?->toIso8601String(),
-            'last_modified_at' => $event->lastModifiedAt?->toIso8601String(),
-            'status' => $event->status,
-            'classification' => $event->classification,
-            'priority' => $event->priority,
-            'recurrence_id' => self::dateTimeString($event->recurrenceId, $event->recurrenceIdIsDate),
-            'recurrence_id_is_date' => $event->recurrenceIdIsDate,
-            'recurrence_id_is_floating' => $event->recurrenceIdIsFloating,
-            'sequence' => $event->sequence,
-            'url' => $event->url,
-            'organizer' => $event->organizer === null ? null : $this->organizerArray($event->organizer),
-            'attendees' => \array_values($event->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
-            'alarms' => \array_values($event->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
-            'categories' => \array_values($event->categories->all()),
-            'geo' => $event->geo,
-            'transparency' => $event->transparency,
-            'comments' => \array_values($event->comments->all()),
-            'contacts' => \array_values($event->contacts->all()),
-            'resources' => \array_values($event->resources->all()),
-            'recurrence_rule' => $event->recurrenceRule?->toArray(),
-            'attachments' => $this->propertyArrays($event->attachments),
-            'exception_dates' => $this->propertyArrays($event->exceptionDates),
-            'request_statuses' => $this->propertyArrays($event->requestStatuses),
-            'related_to' => $this->propertyArrays($event->relatedTo),
-            'recurrence_dates' => $this->propertyArrays($event->recurrenceDates),
-        ];
-    }
-
-    /**
-     * Convert one todo for the Calendar output contract.
-     *
-     * @return TodoArray
-     */
-    private function todoArray(Todo $todo): array
-    {
-        return [
-            'uid' => $todo->uid,
-            'timestamp' => $todo->timestamp?->toIso8601String(),
-            'classification' => $todo->classification,
-            'completed_at' => $todo->completedAt?->toIso8601String(),
-            'created_at' => $todo->createdAt?->toIso8601String(),
-            'description' => $todo->description,
-            'starts_at' => self::dateTimeString($todo->startsAt, $todo->startIsDate),
-            'start_is_date' => $todo->startIsDate,
-            'start_is_floating' => $todo->startIsFloating,
-            'due_at' => self::dateTimeString($todo->dueAt, $todo->dueIsDate),
-            'due_is_date' => $todo->dueIsDate,
-            'due_is_floating' => $todo->dueIsFloating,
-            'duration' => self::durationString($todo->duration),
-            'last_modified_at' => $todo->lastModifiedAt?->toIso8601String(),
-            'location' => $todo->location,
-            'organizer' => $todo->organizer === null ? null : $this->organizerArray($todo->organizer),
-            'percent_complete' => $todo->percentComplete,
-            'priority' => $todo->priority,
-            'recurrence_id' => self::dateTimeString($todo->recurrenceId, $todo->recurrenceIdIsDate),
-            'recurrence_id_is_date' => $todo->recurrenceIdIsDate,
-            'recurrence_id_is_floating' => $todo->recurrenceIdIsFloating,
-            'sequence' => $todo->sequence,
-            'status' => $todo->status,
-            'summary' => $todo->summary,
-            'url' => $todo->url,
-            'attendees' => \array_values($todo->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
-            'categories' => \array_values($todo->categories->all()),
-            'alarms' => \array_values($todo->alarms->map(fn (Alarm $alarm): array => $this->alarmArray($alarm))->all()),
-            'geo' => $todo->geo,
-            'comments' => \array_values($todo->comments->all()),
-            'contacts' => \array_values($todo->contacts->all()),
-            'resources' => \array_values($todo->resources->all()),
-            'recurrence_rule' => $todo->recurrenceRule?->toArray(),
-            'attachments' => $this->propertyArrays($todo->attachments),
-            'exception_dates' => $this->propertyArrays($todo->exceptionDates),
-            'request_statuses' => $this->propertyArrays($todo->requestStatuses),
-            'related_to' => $this->propertyArrays($todo->relatedTo),
-            'recurrence_dates' => $this->propertyArrays($todo->recurrenceDates),
-        ];
-    }
-
-    /**
-     * Convert an organizer for the Calendar output contract.
-     *
-     * @return OrganizerArray
-     */
-    private function organizerArray(Organizer $organizer): array
-    {
-        return [
-            'address' => $organizer->address,
-            'email' => $organizer->email,
-            'name' => $organizer->name,
-            'sent_by' => $organizer->sentBy,
-            'directory' => $organizer->directory,
-            'parameters' => $this->parameterArray($organizer->parameters()),
-        ];
-    }
-
-    /**
-     * Convert an attendee for the Calendar output contract.
-     *
-     * @return AttendeeArray
-     */
-    private function attendeeArray(Attendee $attendee): array
-    {
-        return [
-            'address' => $attendee->address,
-            'email' => $attendee->email,
-            'name' => $attendee->name,
-            'role' => $attendee->role,
-            'status' => $attendee->status,
-            'rsvp' => $attendee->rsvp,
-            'type' => $attendee->type,
-            'delegated_from' => \array_values($attendee->delegatedFrom->all()),
-            'delegated_to' => \array_values($attendee->delegatedTo->all()),
-            'parameters' => $this->parameterArray($attendee->parameters()),
-        ];
-    }
-
-    /**
-     * Convert an alarm for the Calendar output contract.
-     *
-     * @return AlarmArray
-     */
-    private function alarmArray(Alarm $alarm): array
-    {
-        return [
-            'action' => $alarm->action,
-            'trigger' => $alarm->trigger === null ? null : [
-                'is_relative' => $alarm->trigger->isRelative(),
-                'is_absolute' => $alarm->trigger->isAbsolute(),
-                'duration' => self::durationString($alarm->trigger->duration()),
-                'date_time' => $alarm->trigger->dateTime()?->toIso8601String(),
-                'related_to' => $alarm->trigger->relatedTo(),
-            ],
-            'description' => $alarm->description,
-            'summary' => $alarm->summary,
-            'attendees' => \array_values($alarm->attendees->map(fn (Attendee $attendee): array => $this->attendeeArray($attendee))->all()),
-            'attachments' => \array_values($alarm->attachments->map(static fn (Property $property): array => $property->toArray())->all()),
-            'repeat' => $alarm->repeat,
-            'duration' => self::durationString($alarm->duration),
-        ];
-    }
-
-    /** Convert a date interval to a stable ISO 8601 duration string. */
-    private static function durationString(?DateInterval $duration): ?string
-    {
-        if ($duration === null) {
-            return null;
-        }
-
-        $date = ($duration->y ? $duration->y . 'Y' : '')
-            . ($duration->m ? $duration->m . 'M' : '')
-            . ($duration->d ? $duration->d . 'D' : '');
-        $time = ($duration->h ? $duration->h . 'H' : '')
-            . ($duration->i ? $duration->i . 'M' : '')
-            . ($duration->s ? $duration->s . 'S' : '');
-
-        if ($date === '' && $time === '') {
-            $date = '0D';
-        }
-
-        return ($duration->invert ? '-' : '') . 'P' . $date . ($time === '' ? '' : 'T' . $time);
-    }
-
-    /** Format a date-only or date-time value for the public output contract. */
-    private static function dateTimeString(?CarbonImmutable $value, bool $isDate): ?string
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        return $isDate ? $value->toDateString() : $value->toIso8601String();
-    }
-
-    /**
-     * Convert a generic component tree without collapsing ordered data.
-     *
-     * @return ComponentArray
-     */
-    private function componentArray(Component $component): array
-    {
-        return [
-            'name' => $component->name,
-            'properties' => \array_values($component->properties()
-                ->map(fn (Property $property): array => $property->toArray())
-                ->all()),
-            'components' => \array_values($component->components()
-                ->map(fn (Component $child): array => $this->componentArray($child))
-                ->all()),
-        ];
-    }
-
-    /**
-     * Convert ordered generic property shortcuts for the Calendar output contract.
-     *
-     * @param  Collection<int, Property>  $properties
-     * @return list<PropertyArray>
-     */
-    private function propertyArrays(Collection $properties): array
-    {
-        return \array_values($properties->map(static fn (Property $property): array => $property->toArray())->all());
-    }
-
-    /**
      * Normalize and validate an iCalendar property or component name.
      *
      * @throws InvalidArgumentException
@@ -1052,16 +802,5 @@ final readonly class Calendar implements JsonSerializable
         }
 
         return \strtoupper($name);
-    }
-
-    /**
-     * Normalize parameter list keys for the fixed serialization contract.
-     *
-     * @param  array<string, string|list<string>>  $parameters
-     * @return array<string, string|list<string>>
-     */
-    private function parameterArray(array $parameters): array
-    {
-        return $parameters;
     }
 }
