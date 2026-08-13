@@ -290,6 +290,7 @@ final readonly class Reader
             propertyItems: $properties,
             componentItems: $components,
             component: clone $component,
+            eventHydrator: fn (VEvent $event): Event => $this->hydrateEvent($event, $floatingTimezone),
         );
     }
 

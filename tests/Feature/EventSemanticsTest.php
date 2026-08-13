@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Mattmy\ICalendar\Exceptions\InvalidCalendar;
+use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Facades\ICalendar;
 
 it('derives an exclusive one-day end for an all-day event without an explicit end', function () {
@@ -69,6 +72,140 @@ ICS);
             CarbonImmutable::parse('2026-08-03 03:00:00 UTC'),
             CarbonImmutable::parse('2026-08-03 03:00:00 UTC'),
         ))->toThrow(InvalidArgumentException::class);
+});
+
+it('expands recurring events with RDATE, EXDATE, overrides, and cancellations', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:series@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T090000Z
+DTEND:20260803T100000Z
+RRULE:FREQ=DAILY;COUNT=3
+RDATE:20260810T090000Z
+EXDATE:20260804T090000Z
+SUMMARY:Master
+END:VEVENT
+BEGIN:VEVENT
+UID:series@example.test
+DTSTAMP:20260801T000000Z
+RECURRENCE-ID:20260805T090000Z
+DTSTART:20260805T110000Z
+DTEND:20260805T120000Z
+SUMMARY:Moved
+END:VEVENT
+BEGIN:VEVENT
+UID:series@example.test
+DTSTAMP:20260801T000000Z
+RECURRENCE-ID:20260810T090000Z
+DTSTART:20260810T090000Z
+STATUS:CANCELLED
+SUMMARY:Cancelled
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    $occurrences = $calendar->occurrencesBetween(
+        CarbonImmutable::parse('2026-08-03 00:00:00 UTC'),
+        CarbonImmutable::parse('2026-08-11 00:00:00 UTC'),
+    );
+
+    expect($occurrences->pluck('summary')->all())->toBe(['Master', 'Moved'])
+        ->and($occurrences->pluck('recurrenceId')->map(static fn (?CarbonImmutable $date): ?string => $date?->toIso8601String())->all())
+        ->toBe(['2026-08-03T09:00:00+00:00', '2026-08-05T09:00:00+00:00'])
+        ->and($calendar->eventsBetween(
+            CarbonImmutable::parse('2026-08-03 00:00:00 UTC'),
+            CarbonImmutable::parse('2026-08-11 00:00:00 UTC'),
+        )->pluck('summary')->all())->toBe(['Master', 'Moved', 'Cancelled']);
+});
+
+it('rejects unsupported range overrides and invalid occurrence ranges', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:range@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T090000Z
+RRULE:FREQ=DAILY;COUNT=2
+END:VEVENT
+BEGIN:VEVENT
+UID:range@example.test
+DTSTAMP:20260801T000000Z
+RECURRENCE-ID;RANGE=THISANDFUTURE:20260804T090000Z
+DTSTART:20260804T100000Z
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    expect(fn () => $calendar->occurrencesBetween(
+        CarbonImmutable::parse('2026-08-03 UTC'),
+        CarbonImmutable::parse('2026-08-05 UTC'),
+    ))->toThrow(UnsupportedRecurrence::class)
+        ->and(fn () => $calendar->occurrencesBetween(
+            CarbonImmutable::parse('2026-08-05 UTC'),
+            CarbonImmutable::parse('2026-08-05 UTC'),
+        ))->toThrow(InvalidArgumentException::class);
+});
+
+it('keeps mutable date boundaries unchanged while accepting native and Carbon date-time values', function () {
+    $calendar = ICalendar::read(calendarFixture('basic-event'));
+    $from = new DateTime('2026-08-03 00:00:00', new DateTimeZone('UTC'));
+    $until = Carbon::parse('2026-08-04 00:00:00 UTC');
+    $fromBefore = clone $from;
+    $untilBefore = $until->copy();
+
+    $occurrences = $calendar->occurrencesBetween($from, $until);
+
+    expect($occurrences)->toHaveCount(1)
+        ->and($from)->toEqual($fromBefore)
+        ->and($until)->toEqual($untilBefore);
+});
+
+it('rejects detached overrides', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:detached@example.test
+DTSTAMP:20260801T000000Z
+RECURRENCE-ID:20260803T090000Z
+DTSTART:20260803T100000Z
+SUMMARY:Detached
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    expect(fn () => $calendar->occurrencesBetween(
+        CarbonImmutable::parse('2026-08-03 00:00:00 UTC'),
+        CarbonImmutable::parse('2026-08-04 00:00:00 UTC'),
+    ))->toThrow(UnsupportedRecurrence::class);
+});
+
+it('rejects multiple recurrence masters during document validation', function () {
+    expect(fn () => ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Tests//EN
+BEGIN:VEVENT
+UID:multiple@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T090000Z
+RRULE:FREQ=DAILY;COUNT=2
+END:VEVENT
+BEGIN:VEVENT
+UID:multiple@example.test
+DTSTAMP:20260801T000000Z
+DTSTART:20260803T100000Z
+RRULE:FREQ=DAILY;COUNT=2
+END:VEVENT
+END:VCALENDAR
+ICS))->toThrow(InvalidCalendar::class);
 });
 
 it('supports absolute alarm triggers', function () {
