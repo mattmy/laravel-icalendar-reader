@@ -44,7 +44,9 @@ status from midnight or duration.
 
 Organizer and Attendee preserve their cal-address and parameters. Alarm keeps
 its action, trigger, description, summary, attendees, repeat count, and
-duration. An `AlarmTrigger` is either relative or absolute.
+duration. It also exposes `attachments`, direct property queries, extension
+properties, and a defensive `rawComponent()` clone. An `AlarmTrigger` is
+either relative or absolute.
 
 ## Complete data access
 
@@ -61,7 +63,9 @@ do not generate `.ics` and do not provide byte-for-byte round trips.
 
 ## Date and timezone semantics
 
-- UTC and resolvable `TZID` values retain their timezone.
+- UTC and resolvable `TZID` values retain their timezone. A matching
+  `VTIMEZONE` definition is authoritative even when the host recognizes the
+  same identifier.
 - Floating values use `icalendar_reader.floating_timezone` when it is a valid IANA
   timezone; when it is unset, they use a valid `app.timezone`, otherwise UTC. An
   invalid package override falls back directly to UTC, even when `app.timezone` is valid.
@@ -69,13 +73,18 @@ do not generate `.ics` and do not provide byte-for-byte round trips.
   `null`, the raw Property remains available, and Calendar receives a
   `mapping_warning`.
 - All-day `DTEND` is exclusive; `lastDay` is the inclusive convenience date.
-- `duration` is effective duration. `DTEND` wins when both `DTEND` and
-  `DURATION` are present.
+- `duration` is effective duration. Invalid `DTEND + DURATION` and
+  `DUE + DURATION` combinations are rejected.
 - `eventsBetween()` uses a half-open interval and does not expand recurrence.
+- `occurrencesBetween()` expands a bounded VEVENT recurrence query, including
+  `RDATE;VALUE=PERIOD` explicit durations, and enforces a 3,500-candidate work
+  limit before exclusions and de-duplication.
 
 ## Validation and failures
 
-Every input is parsed with strict Sabre options and then fully validated.
+Every input is parsed with strict Sabre options and then validated by Sabre
+and package-level RFC semantic checks. The single-calendar API rejects a
+stream containing zero or multiple VCALENDAR objects.
 Level-two issues are returned from `warnings()`; level-three issues make the
 document invalid.
 

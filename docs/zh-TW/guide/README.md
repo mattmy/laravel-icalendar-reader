@@ -35,6 +35,10 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 Collection。`hasEvents($uid)` 採用相同規則；`event($uid)` 則依文件所述的
 recurrence 選擇規則回傳單一事件。
 
+Alarm 除了 action、trigger、description、summary、attendees、repeat 與 duration，
+也提供 `attachments`、直接 property 查詢、extension properties，以及防禦性複製的
+`rawComponent()`。
+
 ## 完整資料存取
 
 `properties()` 依文件順序保留直接 properties，包括重複項目、parameters、多值、
@@ -48,20 +52,25 @@ normalized component tree。這些方法不會產生 `.ics`，也不保證 byte 
 
 ## 日期與時區
 
-- UTC 與可解析的 `TZID` 會保留原時區。
+- UTC 與可解析的 `TZID` 會保留原時區；同一份 calendar 內相符的 `VTIMEZONE`
+  永遠優先，即使 host 也認得相同名稱。
 - Floating time 在 `icalendar_reader.floating_timezone` 是有效 IANA 時區時使用該值；
   未設定時才使用有效的 `app.timezone`，否則 fallback 至 UTC。若 package override
   已設定但無效，會直接 fallback 至 UTC，即使 `app.timezone` 有效也不會改用它。
 - 文件中的 `TZID` 無法解析時不會偷換 UTC；typed value 為 `null`、Property 保留
   原值，Calendar 並產生 `mapping_warning`。
 - 全天 `DTEND` 保持 exclusive，`lastDay` 是 inclusive convenience date。
-- `duration` 表示 effective duration；同時有 `DTEND` 與 `DURATION` 時以
-  `DTEND` 為準。
+- `duration` 表示 effective duration；不合法的 `DTEND + DURATION` 與
+  `DUE + DURATION` 組合會被拒絕。
 - `eventsBetween()` 使用 half-open interval，且不展開 recurrence。
+- `occurrencesBetween()` 展開有界的 VEVENT recurrence，支援
+  `RDATE;VALUE=PERIOD` 的 explicit duration，並在 EXDATE 與去重前套用 3,500 個
+  candidates 的工作上限。
 
 ## 驗證與例外
 
-每次輸入都使用嚴格 Sabre options 解析並完整 validation。Level 2 issue 由
+每次輸入都使用嚴格 Sabre options 解析，再經 Sabre 與 package-level RFC semantic
+validation。單一 Calendar API 只接受恰好一個 VCALENDAR object。Level 2 issue 由
 `warnings()` 回傳；level 3 代表文件不合法。
 
 `read*()` 對不合法內容拋出 `InvalidCalendar`；`try*()` 只把該例外轉成 `null`。

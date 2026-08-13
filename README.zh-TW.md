@@ -87,13 +87,18 @@ $events = $calendar->events('event@example.test');
 $event = $calendar->event('event@example.test');
 $todos = $calendar->todos();
 $eventsInRange = $calendar->eventsBetween($from, $until);
+$occurrences = $calendar->occurrencesBetween($from, $until);
 $freeBusy = $calendar->component('VFREEBUSY');
 $customProperty = $calendar->property('X-CUSTOM');
 $json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-UID 比對區分大小寫，Collections 會保留文件順序。事件範圍查詢使用 `.ics` 輸入中的事件
-components，recurrence rules 與 dates 則保留在 properties 中供應用程式取得。
+UID 比對區分大小寫，Collections 會保留文件順序。`eventsBetween()` 使用輸入中的事件
+components；`occurrencesBetween()` 會展開有界的 VEVENT recurrence，包括
+`RDATE;VALUE=PERIOD` 的 explicit duration，並套用 3,500 candidates 的工作上限。
+
+Calendar 內相符的 `VTIMEZONE` 定義優先於 host tzdata。Alarm object 提供 attachments、
+直接 properties、extension data 與防禦性複製的 raw component。
 
 ## 驗證與警告
 
@@ -110,6 +115,8 @@ $warnings = $calendar->warnings();
 ```
 
 `issues()` 說明內容遭拒絕的原因；`warnings()` 回報成功讀取後仍需留意的內容或設定。
+除了 Sabre validation，套件也驗證 temporal、alarm、date-time、INTEGER 與 PERIOD
+規則；目前 API 只接受恰好一個 VCALENDAR object。
 
 ## 效能與安全
 

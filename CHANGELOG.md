@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- RFC semantic validation for temporal relationships, action-specific VALARM grammar, date-time forms, INTEGER ranges, and PERIOD values.
+- VEVENT `RDATE;VALUE=PERIOD` expansion with explicit per-occurrence duration.
+- Alarm attachment, direct property, extension property, and defensive raw-component access.
+
+### Fixed
+
+- Bounded and work-limited recurrence expansion, including infinite rules and EXDATE-filtered candidates.
+- Calendar-defined VTIMEZONE observances now take precedence over same-named host timezones.
+- Multiple VCALENDAR objects are rejected instead of silently truncating input.
+- Nested extension component snapshots no longer clone every descendant subtree eagerly.
+
 ## [0.2.0] - 2026-08-13
 
 ### Added

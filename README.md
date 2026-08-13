@@ -90,14 +90,18 @@ $events = $calendar->events('event@example.test');
 $event = $calendar->event('event@example.test');
 $todos = $calendar->todos();
 $eventsInRange = $calendar->eventsBetween($from, $until);
+$occurrences = $calendar->occurrencesBetween($from, $until);
 $freeBusy = $calendar->component('VFREEBUSY');
 $customProperty = $calendar->property('X-CUSTOM');
 $json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-UID matching is case-sensitive. Collections preserve document order. Event range queries use
-the event components present in the `.ics` input, while recurrence rules and dates remain
-available as properties.
+UID matching is case-sensitive. Collections preserve document order. `eventsBetween()` uses
+the event components present in the input; `occurrencesBetween()` expands bounded VEVENT
+recurrence, including explicit `RDATE;VALUE=PERIOD` durations, with a 3,500-candidate work cap.
+
+Matching calendar `VTIMEZONE` definitions take precedence over host tzdata. Alarm objects
+expose attachments, direct properties, extension data, and defensive raw component clones.
 
 ## Validation and warnings
 
@@ -114,7 +118,8 @@ $warnings = $calendar->warnings();
 ```
 
 `issues()` explains rejected content. `warnings()` reports readable content or configuration
-that needs attention.
+that needs attention. Validation includes package-level temporal, alarm, date-time, integer,
+and PERIOD rules in addition to Sabre validation; this API accepts exactly one VCALENDAR object.
 
 ## Performance and security
 
