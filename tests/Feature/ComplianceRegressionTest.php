@@ -6,12 +6,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Mattmy\ICalendar\Calendar;
 use Mattmy\ICalendar\CalendarIssue;
+use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Exceptions\CalendarTooLarge;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Reader;
 use Sabre\VObject\Component\VCalendar;
+use Sabre\VObject\Component\VEvent;
 
 it('enforces the actual byte limit for every supported input source', function (string $source) {
     $contents = calendarFixture('basic-event');
@@ -204,6 +206,7 @@ it('keeps calendar and issue serialization contracts stable', function () {
         propertyItems: [],
         componentItems: [],
         component: new VCalendar(),
+        eventHydrator: static fn (VEvent $_): Event => throw new LogicException('Not used by this serialization test.'),
     );
 
     expect(fn () => $invalidUtf8->toJson())->toThrow(JsonException::class);
