@@ -23,7 +23,7 @@ Each source has a matching `try*()` method. It returns `null` only when the
 iCalendar content is invalid. Source, size, and configuration failures remain
 exceptions.
 
-## Calendar and events
+## Calendar, events, todos, and journals
 
 `Calendar` exposes metadata, `events()`, `event($uid)`, `hasEvents()`,
 `eventsBetween()`, `properties()`, `hasProperty()`, `property()`,
@@ -41,6 +41,11 @@ selection rules.
 `attendees`, `alarms`, and `categories`. The readonly `allDay` property and
 `isAllDay()` return the same value; use either instead of inferring all-day
 status from midnight or duration.
+
+`journals()`, `journal($uid)`, and `hasJournals()` use the same exact, case-sensitive UID rules as
+events and todos. `Journal` exposes timestamps, start and recurrence flags, organizer, attendees,
+categories, comments, contacts, repeated `descriptions`, and recurrence properties. It has no alarm,
+range-query, or recurrence-expansion API.
 
 Organizer and Attendee preserve their cal-address and parameters. Alarm keeps
 its action, trigger, description, summary, attendees, repeat count, and

@@ -26,6 +26,7 @@ use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VAlarm;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\Component\VJournal;
 use Sabre\VObject\Component\VTodo;
 use Sabre\VObject\DateTimeParser;
 use Sabre\VObject\InvalidDataException;
@@ -259,6 +260,7 @@ final readonly class Reader
     ): Calendar {
         $events = [];
         $todos = [];
+        $journals = [];
 
         foreach ($component->select('VEVENT') as $eventComponent) {
             if ($eventComponent instanceof VEvent) {
@@ -269,6 +271,12 @@ final readonly class Reader
         foreach ($component->select('VTODO') as $todoComponent) {
             if ($todoComponent instanceof VTodo) {
                 $todos[] = $this->hydrateTodo($todoComponent, $floatingTimezone);
+            }
+        }
+
+        foreach ($component->select('VJOURNAL') as $journalComponent) {
+            if ($journalComponent instanceof VJournal) {
+                $journals[] = $this->hydrateJournal($journalComponent, $floatingTimezone);
             }
         }
 
@@ -289,6 +297,7 @@ final readonly class Reader
             floatingTimezone: $floatingTimezone,
             eventItems: $events,
             todoItems: $todos,
+            journalItems: $journals,
             warningItems: $warnings,
             propertyItems: $properties,
             componentItems: $components,
@@ -439,6 +448,48 @@ final readonly class Reader
             requestStatuses: collect($this->hydratedProperties($properties, PropertyName::REQUEST_STATUS)),
             relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
             recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
+            propertyItems: $properties,
+            component: clone $component,
+        );
+    }
+
+    /** Hydrate one journal without exposing the mutable Sabre component. */
+    private function hydrateJournal(VJournal $component, string $floatingTimezone): Journal
+    {
+        $properties = $this->hydrateProperties($component, $floatingTimezone);
+        $startProperty = $this->firstProperty($component, PropertyName::DTSTART);
+        $recurrenceIdProperty = $this->firstProperty($component, PropertyName::RECURRENCE_ID);
+
+        return new Journal(
+            uid: $this->stringProperty($component, PropertyName::UID),
+            timestamp: $this->dateTimeValue($this->firstProperty($component, PropertyName::DTSTAMP), $floatingTimezone),
+            classification: $this->upperStringProperty($component, PropertyName::CLASSIFICATION),
+            createdAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::CREATED), $floatingTimezone),
+            startsAt: $this->dateTimeValue($startProperty, $floatingTimezone),
+            startIsDate: $this->isDate($startProperty),
+            startIsFloating: $this->isFloating($startProperty),
+            lastModifiedAt: $this->dateTimeValue($this->firstProperty($component, PropertyName::LAST_MODIFIED), $floatingTimezone),
+            organizer: ($organizer = $this->firstProperty($component, PropertyName::ORGANIZER)) === null
+                ? null
+                : $this->hydrateOrganizer($organizer),
+            recurrenceId: $this->dateTimeValue($recurrenceIdProperty, $floatingTimezone),
+            recurrenceIdIsDate: $this->isDate($recurrenceIdProperty),
+            recurrenceIdIsFloating: $this->isFloating($recurrenceIdProperty),
+            sequence: $this->integerProperty($component, PropertyName::SEQUENCE),
+            status: $this->upperStringProperty($component, PropertyName::STATUS),
+            summary: $this->stringProperty($component, PropertyName::SUMMARY),
+            url: $this->stringProperty($component, PropertyName::URL),
+            recurrenceRule: $this->firstHydratedProperty($properties, PropertyName::RRULE),
+            attachments: collect($this->hydratedProperties($properties, PropertyName::ATTACH)),
+            attendees: $this->hydrateAttendees($component),
+            categories: collect($this->stringValues($properties, PropertyName::CATEGORIES)),
+            comments: collect($this->textValues($properties, PropertyName::COMMENT)),
+            contacts: collect($this->textValues($properties, PropertyName::CONTACT)),
+            descriptions: collect($this->textValues($properties, PropertyName::DESCRIPTION)),
+            exceptionDates: collect($this->hydratedProperties($properties, PropertyName::EXDATE)),
+            relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
+            recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
+            requestStatuses: collect($this->hydratedProperties($properties, PropertyName::REQUEST_STATUS)),
             propertyItems: $properties,
             component: clone $component,
         );

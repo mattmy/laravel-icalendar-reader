@@ -4,8 +4,14 @@ All notable changes to this project are documented here. The format follows Keep
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.3.0] - 2026-08-14
+
 ### Added
 
+- Typed `Journal` snapshots with exact UID queries, repeated descriptions, direct properties,
+  defensive raw-component clones, and Calendar array/JSON serialization.
 - RFC semantic validation for temporal relationships, action-specific VALARM grammar, date-time forms, INTEGER ranges, and PERIOD values.
 - VEVENT `RDATE;VALUE=PERIOD` expansion with explicit per-occurrence duration.
 - Alarm attachment, direct property, extension property, and defensive raw-component access.
@@ -45,3 +51,4 @@ All notable changes to this project are documented here. The format follows Keep
 
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
+[0.3.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.3.0

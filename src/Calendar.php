@@ -42,7 +42,8 @@ use Sabre\VObject\Recur\NoInstancesException;
  * @phpstan-type GeoArray array{latitude: float, longitude: float}
  * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>, geo: ?GeoArray, transparency: ?string, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
  * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>, geo: ?GeoArray, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
- * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, warnings: list<IssueArray>}
+ * @phpstan-type JournalArray array{uid: ?string, timestamp: ?string, classification: ?string, created_at: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, last_modified_at: ?string, organizer: ?OrganizerArray, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, attendees: list<AttendeeArray>, categories: list<string>, comments: list<string>, contacts: list<string>, descriptions: list<string>, exception_dates: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>, request_statuses: list<PropertyArray>}
+ * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, journals: list<JournalArray>, warnings: list<IssueArray>}
  */
 final readonly class Calendar implements JsonSerializable
 {
@@ -55,6 +56,7 @@ final readonly class Calendar implements JsonSerializable
      *
      * @param  list<Event>  $eventItems
      * @param  list<Todo>  $todoItems
+     * @param  list<Journal>  $journalItems
      * @param  list<CalendarIssue>  $warningItems
      * @param  list<Property>  $propertyItems
      * @param  list<Component>  $componentItems
@@ -70,6 +72,7 @@ final readonly class Calendar implements JsonSerializable
         public string $floatingTimezone,
         private array $eventItems,
         private array $todoItems,
+        private array $journalItems,
         private array $warningItems,
         private array $propertyItems,
         private array $componentItems,
@@ -159,6 +162,48 @@ final readonly class Calendar implements JsonSerializable
 
                 if (! $todo->hasProperty(PropertyName::RECURRENCE_ID)) {
                     return $todo;
+                }
+            }
+        }
+
+        return $firstMatch;
+    }
+
+    /**
+     * Return journals in document order, optionally filtered by exact UID.
+     *
+     * @return Collection<int, Journal>
+     */
+    public function journals(?string $uid = null): Collection
+    {
+        $journals = collect($this->journalItems);
+
+        if ($uid === null) {
+            return $journals;
+        }
+
+        return $journals
+            ->filter(static fn (Journal $journal): bool => $journal->uid === $uid)
+            ->values();
+    }
+
+    /** Determine whether any journal, or an exact UID match, exists. */
+    public function hasJournals(?string $uid = null): bool
+    {
+        return $this->journals($uid)->isNotEmpty();
+    }
+
+    /** Find a journal by its exact, case-sensitive UID. */
+    public function journal(string $uid): ?Journal
+    {
+        $firstMatch = null;
+
+        foreach ($this->journalItems as $journal) {
+            if ($journal->uid === $uid) {
+                $firstMatch ??= $journal;
+
+                if (! $journal->hasProperty(PropertyName::RECURRENCE_ID)) {
+                    return $journal;
                 }
             }
         }
