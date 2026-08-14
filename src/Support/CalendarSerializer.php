@@ -12,6 +12,7 @@ use Mattmy\ICalendar\Attendee;
 use Mattmy\ICalendar\Calendar;
 use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Event;
+use Mattmy\ICalendar\Journal;
 use Mattmy\ICalendar\Organizer;
 use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Todo;
@@ -32,6 +33,7 @@ final class CalendarSerializer
             'floating_timezone' => $calendar->floatingTimezone,
             'events' => \array_values($calendar->events()->map(fn (Event $event): array => $this->event($event))->all()),
             'todos' => \array_values($calendar->todos()->map(fn (Todo $todo): array => $this->todo($todo))->all()),
+            'journals' => \array_values($calendar->journals()->map(fn (Journal $journal): array => $this->journal($journal))->all()),
             'warnings' => \array_values($calendar->warnings()->map(static fn ($issue): array => $issue->toArray())->all()),
         ];
     }
@@ -97,27 +99,85 @@ final class CalendarSerializer
     }
 
     /** @return array<string, mixed> */
+    private function journal(Journal $journal): array
+    {
+        return [
+            'uid' => $journal->uid, 'timestamp' => $journal->timestamp?->toIso8601String(), 'classification' => $journal->classification,
+            'created_at' => $journal->createdAt?->toIso8601String(), 'starts_at' => $this->dateTime($journal->startsAt, $journal->startIsDate),
+            'start_is_date' => $journal->startIsDate, 'start_is_floating' => $journal->startIsFloating,
+            'last_modified_at' => $journal->lastModifiedAt?->toIso8601String(),
+            'organizer' => $journal->organizer === null ? null : $this->organizer($journal->organizer),
+            'recurrence_id' => $this->dateTime($journal->recurrenceId, $journal->recurrenceIdIsDate),
+            'recurrence_id_is_date' => $journal->recurrenceIdIsDate, 'recurrence_id_is_floating' => $journal->recurrenceIdIsFloating,
+            'sequence' => $journal->sequence, 'status' => $journal->status, 'summary' => $journal->summary, 'url' => $journal->url,
+            'recurrence_rule' => $journal->recurrenceRule?->toArray(), 'attachments' => $this->properties($journal->attachments),
+            'attendees' => $journal->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
+            'categories' => $journal->categories->values()->all(), 'comments' => $journal->comments->values()->all(),
+            'contacts' => $journal->contacts->values()->all(), 'descriptions' => $journal->descriptions->values()->all(),
+            'exception_dates' => $this->properties($journal->exceptionDates), 'related_to' => $this->properties($journal->relatedTo),
+            'recurrence_dates' => $this->properties($journal->recurrenceDates), 'request_statuses' => $this->properties($journal->requestStatuses),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     private function organizer(Organizer $organizer): array
     {
-        return ['address' => $organizer->address, 'email' => $organizer->email, 'name' => $organizer->name, 'sent_by' => $organizer->sentBy, 'directory' => $organizer->directory, 'parameters' => $organizer->parameters()];
+        return [
+            'address' => $organizer->address,
+            'email' => $organizer->email,
+            'name' => $organizer->name,
+            'sent_by' => $organizer->sentBy,
+            'directory' => $organizer->directory,
+            'parameters' => $organizer->parameters(),
+        ];
     }
 
     /** @return array<string, mixed> */
     private function attendee(Attendee $attendee): array
     {
-        return ['address' => $attendee->address, 'email' => $attendee->email, 'name' => $attendee->name, 'role' => $attendee->role, 'status' => $attendee->status, 'rsvp' => $attendee->rsvp, 'type' => $attendee->type, 'delegated_from' => $attendee->delegatedFrom->values()->all(), 'delegated_to' => $attendee->delegatedTo->values()->all(), 'parameters' => $attendee->parameters()];
+        return [
+            'address' => $attendee->address,
+            'email' => $attendee->email,
+            'name' => $attendee->name,
+            'role' => $attendee->role,
+            'status' => $attendee->status,
+            'rsvp' => $attendee->rsvp,
+            'type' => $attendee->type,
+            'delegated_from' => $attendee->delegatedFrom->values()->all(),
+            'delegated_to' => $attendee->delegatedTo->values()->all(),
+            'parameters' => $attendee->parameters(),
+        ];
     }
 
     /** @return array<string, mixed> */
     private function alarm(Alarm $alarm): array
     {
-        return ['action' => $alarm->action, 'trigger' => $alarm->trigger === null ? null : ['is_relative' => $alarm->trigger->isRelative(), 'is_absolute' => $alarm->trigger->isAbsolute(), 'duration' => $this->duration($alarm->trigger->duration()), 'date_time' => $alarm->trigger->dateTime()?->toIso8601String(), 'related_to' => $alarm->trigger->relatedTo()], 'description' => $alarm->description, 'summary' => $alarm->summary, 'attendees' => $alarm->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(), 'attachments' => $this->properties($alarm->attachments), 'repeat' => $alarm->repeat, 'duration' => $this->duration($alarm->duration)];
+        return [
+            'action' => $alarm->action,
+            'trigger' => $alarm->trigger === null ? null : [
+                'is_relative' => $alarm->trigger->isRelative(),
+                'is_absolute' => $alarm->trigger->isAbsolute(),
+                'duration' => $this->duration($alarm->trigger->duration()),
+                'date_time' => $alarm->trigger->dateTime()?->toIso8601String(),
+                'related_to' => $alarm->trigger->relatedTo(),
+            ],
+            'description' => $alarm->description,
+            'summary' => $alarm->summary,
+            'attendees' => $alarm->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
+            'attachments' => $this->properties($alarm->attachments),
+            'repeat' => $alarm->repeat,
+            'duration' => $this->duration($alarm->duration),
+        ];
     }
 
     /** @return array<string, mixed> */
     private function component(Component $component): array
     {
-        return ['name' => $component->name, 'properties' => $component->properties()->map(static fn (Property $property): array => $property->toArray())->all(), 'components' => $component->components()->map(fn (Component $child): array => $this->component($child))->all()];
+        return [
+            'name' => $component->name,
+            'properties' => $component->properties()->map(static fn (Property $property): array => $property->toArray())->all(),
+            'components' => $component->components()->map(fn (Component $child): array => $this->component($child))->all(),
+        ];
     }
 
     /**

@@ -9,7 +9,7 @@ alarms, recurrence data, properties, and components through `ICalendar`.
 
 - Read complete strings, local files, streams, and Laravel uploaded files with a configurable
   byte limit.
-- Query events and todos in document order, by exact UID, or by date range.
+- Query events, todos, and journals in document order or by exact UID; query events by date range.
 - Get common calendar fields as `CarbonImmutable`, `DateInterval`, and Laravel Collections.
 - Inspect organizers, attendees, delegation details, alarms, recurrence data, and all-day or
   floating-time behavior.
@@ -89,6 +89,8 @@ exceptions.
 $events = $calendar->events('event@example.test');
 $event = $calendar->event('event@example.test');
 $todos = $calendar->todos();
+$journals = $calendar->journals();
+$journal = $calendar->journal('entry@example.test');
 $eventsInRange = $calendar->eventsBetween($from, $until);
 $occurrences = $calendar->occurrencesBetween($from, $until);
 $freeBusy = $calendar->component('VFREEBUSY');
@@ -102,6 +104,8 @@ recurrence, including explicit `RDATE;VALUE=PERIOD` durations, with a 3,500-cand
 
 Matching calendar `VTIMEZONE` definitions take precedence over host tzdata. Alarm objects
 expose attachments, direct properties, extension data, and defensive raw component clones.
+Journals preserve repeated descriptions and recurrence data, but do not provide alarm, range,
+or recurrence-expansion APIs.
 
 ## Validation and warnings
 

@@ -202,6 +202,7 @@ it('keeps calendar and issue serialization contracts stable', function () {
         floatingTimezone: 'UTC',
         eventItems: [],
         todoItems: [],
+        journalItems: [],
         warningItems: [],
         propertyItems: [],
         componentItems: [],

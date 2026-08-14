@@ -22,7 +22,7 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 每種來源都有對應的 `try*()`。只有 iCalendar 內容不合法時才回傳 `null`；來源、
 大小及設定錯誤仍會拋出例外。
 
-## Calendar 與 Event
+## Calendar、Event、Todo 與 Journal
 
 `Calendar` 提供 metadata、`events()`、`event($uid)`、`hasEvents()`、
 `eventsBetween()`、properties、components 與 warnings。`Event` 提供 UID、標題、
@@ -34,6 +34,11 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 包括 recurrence overrides。傳入 `null` 會回傳全部事件；沒有相符項目則回傳空
 Collection。`hasEvents($uid)` 採用相同規則；`event($uid)` 則依文件所述的
 recurrence 選擇規則回傳單一事件。
+
+`journals()`、`journal($uid)` 與 `hasJournals()` 與 Event／Todo 使用相同精確、區分大小寫
+的 UID 規則。`Journal` 提供 timestamps、開始與 recurrence flags、organizer、attendees、
+categories、comments、contacts、可重複的 `descriptions` 與 recurrence properties；它不提供
+alarm、範圍查詢或 recurrence expansion API。
 
 Alarm 除了 action、trigger、description、summary、attendees、repeat 與 duration，
 也提供 `attachments`、直接 property 查詢、extension properties，以及防禦性複製的
