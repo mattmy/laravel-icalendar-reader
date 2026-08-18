@@ -49,6 +49,8 @@ php artisan vendor:publish --tag=icalendar-reader-config
 ## 快速開始
 
 ```php
+use Mattmy\ICalendar\Facades\ICalendar;
+
 $calendar = ICalendar::read(<<<'ICS'
 BEGIN:VCALENDAR
 VERSION:2.0
@@ -73,6 +75,8 @@ echo $event->startsAt?->toIso8601String(); // 2026-08-10T09:00:00+00:00
 依輸入來源選擇方法：
 
 ```php
+use Mattmy\ICalendar\Facades\ICalendar;
+
 $calendar = ICalendar::read($contents);
 $calendar = ICalendar::fromPath($path);
 $calendar = ICalendar::fromStream($stream);
@@ -104,6 +108,7 @@ Calendar 內相符的 `VTIMEZONE` 定義優先於 host tzdata。Alarm object 提
 
 ```php
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
+use Mattmy\ICalendar\Facades\ICalendar;
 
 try {
     $calendar = ICalendar::read($contents);
