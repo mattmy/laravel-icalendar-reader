@@ -20,7 +20,7 @@
 
 | 需求 | 宣告支援 | CI 持續實測 |
 | --- | --- | --- |
-| PHP | PHP 8.x 系列的 8.3 以上版本 | 8.3、8.4、8.5 |
+| PHP | PHP 8.x 系列的 8.2 以上版本 | 8.2、8.3、8.4、8.5 |
 | Laravel | 11、12、13 | 11、12、13 |
 | PHP extensions | DOM、JSON、Multibyte String、XMLReader、XMLWriter | Composer 安裝時檢查 |
 | libxml | 2.6.20 以上版本 | Composer 安裝時檢查 |

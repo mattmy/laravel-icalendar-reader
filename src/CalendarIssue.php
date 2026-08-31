@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Mattmy\ICalendar;
 
 use JsonSerializable;
-use Override;
 
 /** Describe one structured parser, validator, configuration, or mapping issue. */
 final readonly class CalendarIssue implements JsonSerializable
 {
-    public const int LEVEL_WARNING = 2;
+    public const LEVEL_WARNING = 2;
 
-    public const int LEVEL_ERROR = 3;
+    public const LEVEL_ERROR = 3;
 
     /**
      * Create an immutable parser, validator, configuration, or mapping issue.
@@ -54,7 +53,6 @@ final readonly class CalendarIssue implements JsonSerializable
      *
      * @return array{level: int, code: string, message: string, source: string, line: ?int, component: ?string, property: ?string}
      */
-    #[Override]
     public function jsonSerialize(): array
     {
         return $this->toArray();

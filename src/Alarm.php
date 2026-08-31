@@ -7,7 +7,6 @@ namespace Mattmy\ICalendar;
 use DateInterval;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
-use Override;
 use Sabre\VObject\Component\VAlarm;
 
 /** Represent an immutable typed view of one VALARM component. */
@@ -52,7 +51,6 @@ final readonly class Alarm
      *
      * @internal
      */
-    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;

@@ -20,7 +20,7 @@ use Sabre\VObject\Recur\RRuleIterator;
 /** Map RFC date-time forms without substituting host timezone definitions. */
 final class DateTimeMapper
 {
-    private const int MAX_OBSERVANCE_TRANSITIONS = 3500;
+    private const MAX_OBSERVANCE_TRANSITIONS = 3500;
 
     /** Convert the first date or date-time value to an immutable snapshot. */
     public function value(?SabreProperty $property, string $floatingTimezone): ?CarbonImmutable

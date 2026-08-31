@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Mattmy\ICalendar;
 
 use Illuminate\Support\ServiceProvider;
-use Override;
 
 /** Register the reader, configuration, and package publishing hooks with Laravel. */
 final class CalendarServiceProvider extends ServiceProvider
@@ -13,7 +12,6 @@ final class CalendarServiceProvider extends ServiceProvider
     /**
      * Register package configuration and services.
      */
-    #[Override]
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/icalendar_reader.php', 'icalendar_reader');

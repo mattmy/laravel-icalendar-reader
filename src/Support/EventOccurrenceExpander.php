@@ -26,7 +26,7 @@ use Sabre\VObject\Recur\NoInstancesException;
 /** Expand VEVENT recurrence sets within one bounded query. */
 final class EventOccurrenceExpander
 {
-    private const int MAX_CANDIDATES = 3500;
+    private const MAX_CANDIDATES = 3500;
 
     /**
      * Return concrete and generated events overlapping a half-open interval.
