@@ -12,8 +12,10 @@ use Mattmy\ICalendar\CalendarServiceProvider;
 use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Facades\ICalendar;
+use Mattmy\ICalendar\Journal;
 use Mattmy\ICalendar\Organizer;
 use Mattmy\ICalendar\Reader;
+use Mattmy\ICalendar\Tests\TestCase;
 use Mattmy\ICalendar\Todo;
 
 it('resolves one shared reader through Laravel and the facade', function () {
@@ -73,4 +75,23 @@ it('does not expose uncommitted standalone serializers on nested domain models',
     Attendee::class,
     Alarm::class,
     AlarmTrigger::class,
+]);
+
+it('marks parent interface and trait method implementations with Override', function (string $class, string $method) {
+    $attributes = (new ReflectionMethod($class, $method))->getAttributes(\Override::class);
+
+    expect($attributes)->toHaveCount(1);
+})->with([
+    [CalendarServiceProvider::class, 'register'],
+    [ICalendar::class, 'getFacadeAccessor'],
+    [CalendarIssue::class, 'jsonSerialize'],
+    [Calendar::class, 'jsonSerialize'],
+    [Calendar::class, 'propertyItems'],
+    [Event::class, 'propertyItems'],
+    [Todo::class, 'propertyItems'],
+    [Journal::class, 'propertyItems'],
+    [Component::class, 'propertyItems'],
+    [Alarm::class, 'propertyItems'],
+    [TestCase::class, 'getPackageProviders'],
+    [TestCase::class, 'defineEnvironment'],
 ]);

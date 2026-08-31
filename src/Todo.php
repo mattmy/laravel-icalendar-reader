@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use DateInterval;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Override;
 use Sabre\VObject\Component\VTodo;
 
 /** Represent an immutable typed view of one VTODO component. */
@@ -98,6 +99,7 @@ final readonly class Todo
      *
      * @internal
      */
+    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;

@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows Keep
 
 No changes yet.
 
+## [0.4.0] - 2026-08-31
+
+### Changed
+
+- Moved calendar hydration, property and date-time mapping, recurrence expansion, and
+  serialization into focused internal modules without changing public behavior.
+
+### Fixed
+
+- Applied the mandatory PHP 8.3 `#[Override]` attributes and normalized the existing Pint
+  formatting baseline.
+- Replaced the CI Cartesian product with explicit supported PHP, Laravel, and Testbench jobs.
+- Updated the benchmark bootstrap for the extracted hydration modules.
+- Synchronized the standalone bilingual documentation for Journal serialization and Alarm
+  property/raw-component access.
+
 ## [0.3.0] - 2026-08-14
 
 ### Added
@@ -52,3 +68,4 @@ No changes yet.
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
 [0.3.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.3.0
+[0.4.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.4.0

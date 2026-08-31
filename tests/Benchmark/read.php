@@ -5,7 +5,10 @@ declare(strict_types=1);
 use Illuminate\Config\Repository;
 use Mattmy\ICalendar\Reader;
 use Mattmy\ICalendar\Support\BoundedInputReader;
+use Mattmy\ICalendar\Support\CalendarHydrator;
 use Mattmy\ICalendar\Support\CalendarValidator;
+use Mattmy\ICalendar\Support\DateTimeMapper;
+use Mattmy\ICalendar\Support\PropertyHydrator;
 use Mattmy\ICalendar\Support\TimezoneResolver;
 
 require __DIR__ . '/../../vendor/autoload.php';
@@ -17,7 +20,14 @@ $config = new Repository([
         'floating_timezone' => null,
     ],
 ]);
-$reader = new Reader($config, new BoundedInputReader(), new CalendarValidator(), new TimezoneResolver($config));
+$dateTimeMapper = new DateTimeMapper();
+$reader = new Reader(
+    $config,
+    new BoundedInputReader(),
+    new CalendarValidator(),
+    new TimezoneResolver($config),
+    new CalendarHydrator(new PropertyHydrator($dateTimeMapper), $dateTimeMapper),
+);
 
 foreach ([1, 100, 1000] as $eventCount) {
     $events = '';

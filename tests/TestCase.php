@@ -6,6 +6,7 @@ namespace Mattmy\ICalendar\Tests;
 
 use Mattmy\ICalendar\CalendarServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
+use Override;
 
 abstract class TestCase extends Orchestra
 {
@@ -15,6 +16,7 @@ abstract class TestCase extends Orchestra
      * @param  \Illuminate\Foundation\Application  $app
      * @return list<class-string>
      */
+    #[Override]
     protected function getPackageProviders($app): array
     {
         return [CalendarServiceProvider::class];
@@ -25,6 +27,7 @@ abstract class TestCase extends Orchestra
      *
      * @param  \Illuminate\Foundation\Application  $app
      */
+    #[Override]
     protected function defineEnvironment($app): void
     {
         $app['config']->set('app.timezone', 'Asia/Taipei');

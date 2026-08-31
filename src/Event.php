@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use DateInterval;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Override;
 use Sabre\VObject\Component\VEvent;
 
 /** Represent an immutable typed view of one VEVENT component. */
@@ -111,6 +112,7 @@ final readonly class Event
      *
      * @internal
      */
+    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;
