@@ -7,83 +7,83 @@ namespace Mattmy\ICalendar\Support;
 /** Centralize known iCalendar property wire names. @internal */
 final class PropertyName
 {
-    public const string ACTION = 'ACTION';
+    public const ACTION = 'ACTION';
 
-    public const string ATTACH = 'ATTACH';
+    public const ATTACH = 'ATTACH';
 
-    public const string ATTENDEE = 'ATTENDEE';
+    public const ATTENDEE = 'ATTENDEE';
 
-    public const string CALSCALE = 'CALSCALE';
+    public const CALSCALE = 'CALSCALE';
 
-    public const string CATEGORIES = 'CATEGORIES';
+    public const CATEGORIES = 'CATEGORIES';
 
-    public const string CLASSIFICATION = 'CLASS';
+    public const CLASSIFICATION = 'CLASS';
 
-    public const string COMMENT = 'COMMENT';
+    public const COMMENT = 'COMMENT';
 
-    public const string COMPLETED = 'COMPLETED';
+    public const COMPLETED = 'COMPLETED';
 
-    public const string CONTACT = 'CONTACT';
+    public const CONTACT = 'CONTACT';
 
-    public const string CREATED = 'CREATED';
+    public const CREATED = 'CREATED';
 
-    public const string DESCRIPTION = 'DESCRIPTION';
+    public const DESCRIPTION = 'DESCRIPTION';
 
-    public const string DTEND = 'DTEND';
+    public const DTEND = 'DTEND';
 
-    public const string DTSTAMP = 'DTSTAMP';
+    public const DTSTAMP = 'DTSTAMP';
 
-    public const string DTSTART = 'DTSTART';
+    public const DTSTART = 'DTSTART';
 
-    public const string DUE = 'DUE';
+    public const DUE = 'DUE';
 
-    public const string DURATION = 'DURATION';
+    public const DURATION = 'DURATION';
 
-    public const string EXDATE = 'EXDATE';
+    public const EXDATE = 'EXDATE';
 
-    public const string GEO = 'GEO';
+    public const GEO = 'GEO';
 
-    public const string LAST_MODIFIED = 'LAST-MODIFIED';
+    public const LAST_MODIFIED = 'LAST-MODIFIED';
 
-    public const string LOCATION = 'LOCATION';
+    public const LOCATION = 'LOCATION';
 
-    public const string METHOD = 'METHOD';
+    public const METHOD = 'METHOD';
 
-    public const string ORGANIZER = 'ORGANIZER';
+    public const ORGANIZER = 'ORGANIZER';
 
-    public const string PERCENT_COMPLETE = 'PERCENT-COMPLETE';
+    public const PERCENT_COMPLETE = 'PERCENT-COMPLETE';
 
-    public const string PRIORITY = 'PRIORITY';
+    public const PRIORITY = 'PRIORITY';
 
-    public const string PRODID = 'PRODID';
+    public const PRODID = 'PRODID';
 
-    public const string RDATE = 'RDATE';
+    public const RDATE = 'RDATE';
 
-    public const string RECURRENCE_ID = 'RECURRENCE-ID';
+    public const RECURRENCE_ID = 'RECURRENCE-ID';
 
-    public const string RELATED_TO = 'RELATED-TO';
+    public const RELATED_TO = 'RELATED-TO';
 
-    public const string REPEAT = 'REPEAT';
+    public const REPEAT = 'REPEAT';
 
-    public const string REQUEST_STATUS = 'REQUEST-STATUS';
+    public const REQUEST_STATUS = 'REQUEST-STATUS';
 
-    public const string RESOURCES = 'RESOURCES';
+    public const RESOURCES = 'RESOURCES';
 
-    public const string RRULE = 'RRULE';
+    public const RRULE = 'RRULE';
 
-    public const string SEQUENCE = 'SEQUENCE';
+    public const SEQUENCE = 'SEQUENCE';
 
-    public const string STATUS = 'STATUS';
+    public const STATUS = 'STATUS';
 
-    public const string SUMMARY = 'SUMMARY';
+    public const SUMMARY = 'SUMMARY';
 
-    public const string TRANSP = 'TRANSP';
+    public const TRANSP = 'TRANSP';
 
-    public const string TRIGGER = 'TRIGGER';
+    public const TRIGGER = 'TRIGGER';
 
-    public const string UID = 'UID';
+    public const UID = 'UID';
 
-    public const string URL = 'URL';
+    public const URL = 'URL';
 
-    public const string VERSION = 'VERSION';
+    public const VERSION = 'VERSION';
 }

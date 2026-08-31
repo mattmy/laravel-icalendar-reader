@@ -8,7 +8,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Facade;
 use Mattmy\ICalendar\Calendar;
 use Mattmy\ICalendar\Reader;
-use Override;
 
 /**
  * Provide static access to the same Reader instance available through dependency injection.
@@ -31,7 +30,6 @@ final class ICalendar extends Facade
      *
      * @return class-string<Reader>
      */
-    #[Override]
     protected static function getFacadeAccessor(): string
     {
         return Reader::class;

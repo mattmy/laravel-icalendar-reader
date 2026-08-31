@@ -2,9 +2,22 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
-## [Unreleased]
+## [0.5.0] - 2026-08-31
 
-No changes yet.
+### Changed
+
+- Lowered the minimum PHP version from 8.3 to 8.2 while retaining Laravel 11, 12, and 13 support.
+
+### Added
+
+- Added native PHP 8.2 CI coverage for Laravel 11, Laravel 12, quality checks, and lowest
+  dependencies.
+- Added regression coverage for the Composer PHP 8.2 platform constraint.
+
+### Fixed
+
+- Removed PHP 8.3-only typed class constants and `#[Override]` attributes while preserving the
+  same public API and runtime behavior.
 
 ## [0.4.0] - 2026-08-31
 
@@ -69,3 +82,4 @@ No changes yet.
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
 [0.3.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.3.0
 [0.4.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.4.0
+[0.5.0]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.4.0...HEAD

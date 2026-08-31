@@ -22,7 +22,7 @@ alarms, recurrence data, properties, and components through `ICalendar`.
 
 | Requirement | Declared support | Continuously tested |
 | --- | --- | --- |
-| PHP | 8.3 or later in the PHP 8.x series | 8.3, 8.4, 8.5 |
+| PHP | 8.2 or later in the PHP 8.x series | 8.2, 8.3, 8.4, 8.5 |
 | Laravel | 11, 12, 13 | 11, 12, 13 |
 | PHP extensions | DOM, JSON, Multibyte String, XMLReader, XMLWriter | Checked by Composer during installation |
 | libxml | 2.6.20 or later | Checked by Composer during installation |

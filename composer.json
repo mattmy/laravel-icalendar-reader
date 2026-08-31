@@ -17,7 +17,7 @@
         "source": "https://github.com/mattmy/laravel-icalendar-reader"
     },
     "require": {
-        "php": "^8.3",
+        "php": "^8.2",
         "illuminate/contracts": "^11.0|^12.0|^13.0",
         "illuminate/http": "^11.0|^12.0|^13.0",
         "illuminate/support": "^11.0|^12.0|^13.0",

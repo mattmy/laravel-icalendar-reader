@@ -12,15 +12,24 @@ use Mattmy\ICalendar\CalendarServiceProvider;
 use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Facades\ICalendar;
-use Mattmy\ICalendar\Journal;
 use Mattmy\ICalendar\Organizer;
 use Mattmy\ICalendar\Reader;
-use Mattmy\ICalendar\Tests\TestCase;
 use Mattmy\ICalendar\Todo;
 
 it('resolves one shared reader through Laravel and the facade', function () {
     expect(app(Reader::class))->toBe(app(Reader::class))
         ->and(ICalendar::getFacadeRoot())->toBe(app(Reader::class));
+});
+
+it('declares PHP 8.2 as the minimum runtime', function () {
+    /** @var array{require: array{php: string}} $manifest */
+    $manifest = \json_decode(
+        json: (string) \file_get_contents(__DIR__ . '/../../composer.json'),
+        associative: true,
+        flags: \JSON_THROW_ON_ERROR,
+    );
+
+    expect($manifest['require']['php'])->toBe('^8.2');
 });
 
 it('merges defaults and registers the documented configuration publish mapping', function () {
@@ -75,23 +84,4 @@ it('does not expose uncommitted standalone serializers on nested domain models',
     Attendee::class,
     Alarm::class,
     AlarmTrigger::class,
-]);
-
-it('marks parent interface and trait method implementations with Override', function (string $class, string $method) {
-    $attributes = (new ReflectionMethod($class, $method))->getAttributes(\Override::class);
-
-    expect($attributes)->toHaveCount(1);
-})->with([
-    [CalendarServiceProvider::class, 'register'],
-    [ICalendar::class, 'getFacadeAccessor'],
-    [CalendarIssue::class, 'jsonSerialize'],
-    [Calendar::class, 'jsonSerialize'],
-    [Calendar::class, 'propertyItems'],
-    [Event::class, 'propertyItems'],
-    [Todo::class, 'propertyItems'],
-    [Journal::class, 'propertyItems'],
-    [Component::class, 'propertyItems'],
-    [Alarm::class, 'propertyItems'],
-    [TestCase::class, 'getPackageProviders'],
-    [TestCase::class, 'defineEnvironment'],
 ]);

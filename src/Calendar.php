@@ -16,7 +16,6 @@ use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Support\CalendarSerializer;
 use Mattmy\ICalendar\Support\EventOccurrenceExpander;
 use Mattmy\ICalendar\Support\PropertyName;
-use Override;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 
@@ -345,7 +344,6 @@ final readonly class Calendar implements JsonSerializable
      *
      * @return array<string, mixed>
      */
-    #[Override]
     public function jsonSerialize(): array
     {
         return $this->toArray();
@@ -368,7 +366,6 @@ final readonly class Calendar implements JsonSerializable
      *
      * @internal
      */
-    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;

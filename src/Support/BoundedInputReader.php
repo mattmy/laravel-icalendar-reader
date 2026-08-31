@@ -13,7 +13,7 @@ use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 /** Read supported input sources while enforcing an exact byte limit. */
 final class BoundedInputReader
 {
-    private const int CHUNK_BYTES = 8192;
+    private const CHUNK_BYTES = 8192;
 
     /**
      * Validate string contents against the configured byte limit.
