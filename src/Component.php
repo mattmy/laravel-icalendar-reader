@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Override;
 use Sabre\VObject\Component as SabreComponent;
 
 /** Represent an immutable generic view of an untyped iCalendar component. */
@@ -61,6 +62,7 @@ final readonly class Component
      *
      * @internal
      */
+    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;

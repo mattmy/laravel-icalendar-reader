@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Override;
 use Sabre\VObject\Component\VJournal;
 
 /** Represent an immutable typed view of one VJOURNAL component. */
@@ -80,6 +81,7 @@ final readonly class Journal
      *
      * @internal
      */
+    #[Override]
     protected function propertyItems(): array
     {
         return $this->propertyItems;
