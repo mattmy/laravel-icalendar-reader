@@ -39,9 +39,9 @@ it('merges defaults and registers the documented configuration publish mapping',
     expect(config('icalendar_reader.max_bytes'))->toBeInt()->toBeGreaterThan(0)
         ->and(config('icalendar_reader.floating_timezone'))->toBeNull()
         ->and($paths)->toHaveCount(1)
-        ->and(realpath((string) array_key_first($paths)))
-        ->toBe(realpath(__DIR__ . '/../../config/icalendar_reader.php'))
-        ->and(array_values($paths))->toBe([config_path('icalendar_reader.php')]);
+        ->and(\realpath((string) \array_key_first($paths)))
+        ->toBe(\realpath(__DIR__ . '/../../config/icalendar_reader.php'))
+        ->and(\array_values($paths))->toBe([config_path('icalendar_reader.php')]);
 });
 
 it('supports the documented quick-start event loop', function () {
@@ -74,8 +74,8 @@ it('keeps domain models final and readonly', function (string $class) {
 ]);
 
 it('does not expose uncommitted standalone serializers on nested domain models', function (string $class) {
-    expect(method_exists($class, 'toArray'))->toBeFalse()
-        ->and(method_exists($class, 'jsonSerialize'))->toBeFalse();
+    expect(\method_exists($class, 'toArray'))->toBeFalse()
+        ->and(\method_exists($class, 'jsonSerialize'))->toBeFalse();
 })->with([
     Event::class,
     Todo::class,

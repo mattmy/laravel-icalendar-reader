@@ -87,6 +87,9 @@ do not generate `.ics` and do not provide byte-for-byte round trips.
 
 ## Validation and failures
 
+Recurrence forms the engine cannot safely expand, including SECONDLY/MINUTELY and
+BYSECOND/BYMINUTE, throw `UnsupportedRecurrence` instead of silently ignoring rule parts.
+
 Every input is parsed with strict Sabre options and then validated by Sabre
 and package-level RFC semantic checks. The single-calendar API rejects a
 stream containing zero or multiple VCALENDAR objects.

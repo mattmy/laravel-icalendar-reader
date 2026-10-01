@@ -119,11 +119,10 @@ use Mattmy\ICalendar\Facades\ICalendar;
 
 try {
     $calendar = ICalendar::read($contents);
+    $warnings = $calendar->warnings();
 } catch (InvalidCalendar $exception) {
     $issues = $exception->issues();
 }
-
-$warnings = $calendar->warnings();
 ```
 
 `issues()` explains rejected content. `warnings()` reports readable content or configuration

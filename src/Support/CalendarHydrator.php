@@ -6,6 +6,7 @@ namespace Mattmy\ICalendar\Support;
 
 use DateInterval;
 use Illuminate\Support\Collection;
+use LogicException;
 use Mattmy\ICalendar\Alarm;
 use Mattmy\ICalendar\AlarmTrigger;
 use Mattmy\ICalendar\Attendee;
@@ -41,8 +42,9 @@ final readonly class CalendarHydrator
      *
      * @param  list<CalendarIssue>  $warnings
      */
-    public function hydrate(VCalendar $component, string $floatingTimezone, array $warnings): Calendar
+    public function hydrate(VCalendar $component, string $floatingTimezone, array $warnings, string $contents): Calendar
     {
+        $componentOrder = $this->componentOrder($component, $contents);
         $events = [];
         $todos = [];
         $journals = [];
@@ -67,10 +69,8 @@ final readonly class CalendarHydrator
 
         $components = [];
 
-        foreach ($component->children() as $child) {
-            if ($child instanceof SabreComponent) {
-                $components[] = $this->hydrateComponent($child, $floatingTimezone);
-            }
+        foreach ($componentOrder[\spl_object_id($component)] ?? [] as $child) {
+            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder);
         }
 
         return new Calendar(
@@ -385,15 +385,17 @@ final readonly class CalendarHydrator
         );
     }
 
-    /** Hydrate a generic component and its direct children. */
-    private function hydrateComponent(SabreComponent $component, string $floatingTimezone): Component
+    /**
+     * Hydrate a generic component and its direct children in source order.
+     *
+     * @param  array<int, list<SabreComponent>>  $componentOrder
+     */
+    private function hydrateComponent(SabreComponent $component, string $floatingTimezone, array $componentOrder): Component
     {
         $components = [];
 
-        foreach ($component->children() as $child) {
-            if ($child instanceof SabreComponent) {
-                $components[] = $this->hydrateComponent($child, $floatingTimezone);
-            }
+        foreach ($componentOrder[\spl_object_id($component)] ?? [] as $child) {
+            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder);
         }
 
         return new Component(
@@ -402,6 +404,71 @@ final readonly class CalendarHydrator
             componentItems: $components,
             component: $component,
         );
+    }
+
+    /**
+     * Recover sibling order and property positions lost by Sabre's grouped tree.
+     *
+     * Only names from already validated input are indexed; Sabre remains the parser.
+     *
+     * @return array<int, list<SabreComponent>>
+     */
+    private function componentOrder(VCalendar $calendar, string $contents): array
+    {
+        $order = [];
+        $stack = [];
+        $positions = [];
+        $unfolded = \preg_replace('/\r?\n[ \t]/', '', $contents) ?? $contents;
+        $lines = \explode("\n", $unfolded);
+
+        foreach ($lines as $ordinal => $line) {
+            $line = \rtrim($line, "\r");
+
+            if ($ordinal === 0 && \str_starts_with($line, "\xEF\xBB\xBF")) {
+                $line = \substr($line, 3);
+            }
+
+            $boundary = \preg_match('/^(BEGIN|END):(.+)$/i', $line, $parts) === 1;
+
+            if ($boundary && \strtoupper($parts[1]) === 'END') {
+                \array_pop($stack);
+
+                continue;
+            }
+
+            if ($boundary && $stack === []) {
+                $stack[] = $calendar;
+
+                continue;
+            }
+
+            if ($stack === [] || (! $boundary && \preg_match('/^([A-Z0-9-]+)[;:]/i', $line, $parts) !== 1)) {
+                continue;
+            }
+
+            $parent = $stack[\array_key_last($stack)];
+            $id = \spl_object_id($parent);
+            $name = \strtoupper($boundary ? \substr($line, 6) : $parts[1]);
+            $position = $positions[$id][$name] ?? 0;
+            $child = $parent->select($name)[$position] ?? null;
+
+            $positions[$id][$name] = $position + 1;
+
+            if (! $boundary && $child instanceof SabreProperty) {
+                $child->lineIndex = $ordinal;
+
+                continue;
+            }
+
+            if (! $child instanceof SabreComponent) {
+                throw new LogicException('Validated component boundaries do not match the parsed calendar.');
+            }
+
+            $order[$id][] = $child;
+            $stack[] = $child;
+        }
+
+        return $order;
     }
 
     /** Read the first decoded property value without creating empty strings. */

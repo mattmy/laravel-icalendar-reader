@@ -19,6 +19,7 @@ final readonly class Component
      *
      * @param  list<Property>  $propertyItems
      * @param  list<Component>  $componentItems
+     *
      * @internal
      */
     public function __construct(

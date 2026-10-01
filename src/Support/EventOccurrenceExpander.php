@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Mattmy\ICalendar\Support;
 
 use Closure;
-use DateTimeImmutable;
-use DateTimeInterface;
 use DateTimeZone;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Event;
@@ -14,6 +12,7 @@ use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\DateTimeParser;
 use Sabre\VObject\InvalidDataException;
 use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
@@ -86,9 +85,39 @@ final class EventOccurrenceExpander
             $seen = [];
             $sequence = 0;
             $exclusions = $this->recurrenceExclusions($master['component'], $timezone);
+            $startProperty = $this->rawProperty($master['component'], PropertyName::DTSTART);
+            $localTimezone = $startProperty?->offsetGet(ParameterName::TZID);
+            $masterEvent = $eventHydrator($master['component']);
+            $until = $this->rawProperty($master['component'], PropertyName::RRULE)?->getParts()['UNTIL'] ?? null;
+            $ruleUntil = $localTimezone instanceof Parameter && \is_string($until)
+                ? DateTimeParser::parseDateTime($until)->getTimestamp()
+                : null;
 
-            $this->appendPeriodOccurrences(
-                events: $events,
+            foreach ($events as $event) {
+                if ($this->rawProperty($event['component'], PropertyName::RECURRENCE_ID) === null) {
+                    continue;
+                }
+
+                $this->countCandidate($candidateCount);
+                $key = $this->recurrenceKey($event['component'], $timezone);
+                $seen[$key] = true;
+
+                if (! isset($exclusions[$key])) {
+                    $component = clone $event['component'];
+                    $this->removeRecurrenceGenerators($component);
+                    $this->appendOccurrence(
+                        component: $component,
+                        eventHydrator: $eventHydrator,
+                        masterOrdinal: $master['ordinal'],
+                        sequence: $sequence++,
+                        fromTimestamp: $fromTimestamp,
+                        untilTimestamp: $untilTimestamp,
+                        occurrences: $occurrences,
+                    );
+                }
+            }
+
+            $this->appendRDateOccurrences(
                 master: $master,
                 eventHydrator: $eventHydrator,
                 timezone: $timezone,
@@ -101,55 +130,84 @@ final class EventOccurrenceExpander
                 occurrences: $occurrences,
             );
 
-            foreach ($this->recurrenceSources($events, $master) as $source) {
-                try {
-                    $iterator = new EventIterator($source, null, $timezone);
-                    $iterator->fastForward((new DateTimeImmutable('@' . $fromTimestamp))->setTimezone($timezone));
-                    $this->countCandidates($candidateCount, $iterator->key());
+            try {
+                $iterator = new EventIterator([$this->recurrenceSource($master['component'])], null, $localTimezone instanceof Parameter ? new DateTimeZone('UTC') : $timezone);
 
-                    while ($iterator->valid()) {
-                        $start = $iterator->getDtStart();
+                while ($iterator->getDtStart() !== null) {
+                    $start = $iterator->getDtStart();
 
-                        if ($start === null || $start->getTimestamp() >= $untilTimestamp) {
-                            break;
-                        }
-
-                        $this->countCandidate($candidateCount);
-                        $component = clone $iterator->getEventObject();
-                        $this->ensureRecurrenceId($component);
-                        $key = $this->recurrenceKey($component, $timezone);
-
-                        if (! isset($exclusions[$key]) && ! isset($seen[$key])) {
-                            $seen[$key] = true;
-                            $this->removeRecurrenceGenerators($component);
-                            $this->appendOccurrence(
-                                component: $component,
-                                eventHydrator: $eventHydrator,
-                                masterOrdinal: $master['ordinal'],
-                                sequence: $sequence++,
-                                fromTimestamp: $fromTimestamp,
-                                untilTimestamp: $untilTimestamp,
-                                occurrences: $occurrences,
-                            );
-                        }
-
-                        $iterator->next();
+                    if (! $localTimezone instanceof Parameter && $start->getTimestamp() >= $untilTimestamp) {
+                        break;
                     }
-                } catch (RecurrenceLimitExceeded $exception) {
-                    throw $exception;
-                } catch (NoInstancesException) {
-                    continue;
-                } catch (MaxInstancesExceededException $exception) {
-                    throw new RecurrenceLimitExceeded(
-                        'The recurrence query exceeds its 3500-candidate limit. Narrow the date range.',
-                        previous: $exception,
-                    );
-                } catch (InvalidDataException $exception) {
-                    throw new UnsupportedRecurrence(
-                        'The recurrence for UID ' . ((string) $this->rawProperty($master['component'], PropertyName::UID)) . ' cannot be expanded safely.',
-                        $exception,
-                    );
+
+                    if (! $localTimezone instanceof Parameter) {
+                        $this->countCandidate($candidateCount);
+                    }
+
+                    $component = clone $iterator->getEventObject();
+
+                    if ($localTimezone instanceof Parameter) {
+                        foreach ([PropertyName::DTSTART, PropertyName::RECURRENCE_ID] as $name) {
+                            $property = $this->rawProperty($component, $name);
+
+                            if ($property !== null) {
+                                $property->offsetSet(ParameterName::TZID, clone $localTimezone);
+                            }
+                        }
+
+                        $mappedStart = (new DateTimeMapper())->value($this->rawProperty($component, PropertyName::DTSTART), $floatingTimezone);
+
+                        if ($mappedStart === null) {
+                            throw new UnsupportedRecurrence('A recurring DTSTART cannot be resolved safely.');
+                        }
+
+                        $start = $mappedStart;
+
+                        if (isset($master['component']->{PropertyName::DTEND}) && $masterEvent->startsAt !== null && $masterEvent->endsAt !== null) {
+                            $end = $mappedStart->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
+                            $component->remove(PropertyName::DTEND);
+                            $component->add(PropertyName::DTEND, $end->utc()->format('Ymd\THis\Z'));
+                        }
+                    }
+
+                    if ($start->getTimestamp() >= $untilTimestamp || ($ruleUntil !== null && $start->getTimestamp() > $ruleUntil)) {
+                        break;
+                    }
+
+                    if ($localTimezone instanceof Parameter) {
+                        $this->countCandidate($candidateCount);
+                    }
+                    $this->ensureRecurrenceId($component);
+                    $key = $this->recurrenceKey($component, $timezone);
+
+                    if (! isset($exclusions[$key]) && ! isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $this->removeRecurrenceGenerators($component);
+                        $this->appendOccurrence(
+                            component: $component,
+                            eventHydrator: $eventHydrator,
+                            masterOrdinal: $master['ordinal'],
+                            sequence: $sequence++,
+                            fromTimestamp: $fromTimestamp,
+                            untilTimestamp: $untilTimestamp,
+                            occurrences: $occurrences,
+                        );
+                    }
+
+                    $iterator->next();
                 }
+            } catch (NoInstancesException) {
+                continue;
+            } catch (MaxInstancesExceededException $exception) {
+                throw new RecurrenceLimitExceeded(
+                    'The recurrence query exceeds its 3500-candidate limit. Narrow the date range.',
+                    previous: $exception,
+                );
+            } catch (InvalidDataException $exception) {
+                throw new UnsupportedRecurrence(
+                    'The recurrence for UID ' . ((string) $this->rawProperty($master['component'], PropertyName::UID)) . ' cannot be expanded safely.',
+                    $exception,
+                );
             }
         }
 
@@ -195,6 +253,13 @@ final class EventOccurrenceExpander
             throw new UnsupportedRecurrence('Multiple RRULE properties cannot be expanded safely.');
         }
 
+        $rule = $this->rawProperty($master['component'], PropertyName::RRULE)?->getParts() ?? [];
+
+        if (\in_array(\strtoupper((string) ($rule['FREQ'] ?? '')), ['SECONDLY', 'MINUTELY'], true)
+            || isset($rule['BYSECOND']) || isset($rule['BYMINUTE'])) {
+            throw new UnsupportedRecurrence('This recurrence frequency or time expansion is not supported safely.');
+        }
+
         foreach ($events as $event) {
             $recurrenceId = $this->rawProperty($event['component'], PropertyName::RECURRENCE_ID);
             $range = $recurrenceId?->offsetGet('RANGE');
@@ -235,89 +300,36 @@ final class EventOccurrenceExpander
         }
     }
 
-    /** Count recurrence work skipped by an iterator fast-forward. */
-    private function countCandidates(int &$candidateCount, int $amount): void
-    {
-        $candidateCount += $amount;
-
-        if ($candidateCount > self::MAX_CANDIDATES) {
-            throw new RecurrenceLimitExceeded(
-                'The recurrence query exceeds its 3500-candidate limit. Narrow the date range.',
-            );
-        }
-    }
-
     /**
-     * Build one Sabre iterator source per inclusion type.
-     *
-     * @param  list<array{component: VEvent, ordinal: int}>  $events
-     * @param  array{component: VEvent, ordinal: int}  $master
-     * @return list<list<VEvent>>
+     * Clone the master rule source and neutralize calendar-defined local times.
      */
-    private function recurrenceSources(array $events, array $master): array
+    private function recurrenceSource(VEvent $master): VEvent
     {
-        $hasRule = isset($master['component']->{PropertyName::RRULE});
-        $hasDates = $this->hasDateRDates($master['component']);
-        $sources = [];
+        $component = clone $master;
+        unset($component->{PropertyName::EXDATE}, $component->{PropertyName::RDATE});
+        $localTimezone = $this->rawProperty($component, PropertyName::DTSTART)?->offsetGet(ParameterName::TZID);
 
-        if ($hasRule) {
-            $sources[] = $this->recurrenceSource($events, keepRule: true, keepDates: false);
-        }
+        if ($localTimezone instanceof Parameter) {
+            unset($component->{PropertyName::DTEND});
+            $this->rawProperty($component, PropertyName::DTSTART)->offsetUnset(ParameterName::TZID);
 
-        if ($hasDates) {
-            $sources[] = $this->recurrenceSource($events, keepRule: false, keepDates: true);
-        }
+            $rule = $this->rawProperty($component, PropertyName::RRULE);
 
-        return $sources === []
-            ? [$this->recurrenceSource($events, keepRule: false, keepDates: false)]
-            : $sources;
-    }
-
-    /**
-     * Clone a series and retain one master inclusion source.
-     *
-     * @param  list<array{component: VEvent, ordinal: int}>  $events
-     * @return list<VEvent>
-     */
-    private function recurrenceSource(array $events, bool $keepRule, bool $keepDates): array
-    {
-        $source = [];
-
-        foreach ($events as $event) {
-            $component = clone $event['component'];
-            unset($component->{PropertyName::EXDATE});
-
-            if (! isset($component->{PropertyName::RECURRENCE_ID})) {
-                if (! $keepRule) {
-                    unset($component->{PropertyName::RRULE});
-                }
-
-                foreach ($component->select(PropertyName::RDATE) as $property) {
-                    if (! $keepDates || $property instanceof PeriodProperty) {
-                        $component->remove($property);
-                    }
-                }
-            }
-
-            $source[] = $component;
-        }
-
-        return $source;
-    }
-
-    /** Determine whether a master has DATE or DATE-TIME RDATE inclusions. */
-    private function hasDateRDates(VEvent $master): bool
-    {
-        foreach ($master->select(PropertyName::RDATE) as $property) {
-            if ($property instanceof DateTimeProperty) {
-                return true;
+            if ($rule !== null) {
+                $parts = $rule->getParts();
+                unset($parts['UNTIL']);
+                $rule->setValue($parts);
             }
         }
 
-        return false;
+        return $component;
     }
 
-    /** @return array<string, true> */
+    /**
+     * Map every EXDATE into the same instant keys used by generated occurrences.
+     *
+     * @return array<string, true>
+     */
     private function recurrenceExclusions(VEvent $master, DateTimeZone $timezone): array
     {
         $exclusions = [];
@@ -327,10 +339,8 @@ final class EventOccurrenceExpander
                 continue;
             }
 
-            foreach ($property->getDateTimes($timezone) as $dateTime) {
-                if ($dateTime instanceof DateTimeInterface) {
-                    $exclusions['T:' . $dateTime->format('U.u')] = true;
-                }
+            foreach ((new DateTimeMapper())->values($property, $timezone->getName()) ?? [] as $dateTime) {
+                $exclusions['T:' . $dateTime->format('U.u')] = true;
             }
         }
 
@@ -338,17 +348,15 @@ final class EventOccurrenceExpander
     }
 
     /**
-     * Add explicit PERIOD RDATE inclusions to the shared recurrence set.
+     * Add explicit DATE, DATE-TIME, and PERIOD RDATE inclusions to the shared set.
      *
-     * @param  list<array{component: VEvent, ordinal: int}>  $events
      * @param  array{component: VEvent, ordinal: int}  $master
      * @param  Closure(VEvent): Event  $eventHydrator
      * @param  array<string, true>  $exclusions
      * @param  array<string, true>  $seen
      * @param  list<array{event: Event, masterOrdinal: int, sequence: int}>  $occurrences
      */
-    private function appendPeriodOccurrences(
-        array $events,
+    private function appendRDateOccurrences(
         array $master,
         Closure $eventHydrator,
         DateTimeZone $timezone,
@@ -360,30 +368,57 @@ final class EventOccurrenceExpander
         int $untilTimestamp,
         array &$occurrences,
     ): void {
-        $overrides = [];
-
-        foreach ($events as $event) {
-            if ($this->rawProperty($event['component'], PropertyName::RECURRENCE_ID) !== null) {
-                $overrides[$this->recurrenceKey($event['component'], $timezone)] = $event['component'];
-            }
-        }
+        $masterEvent = $eventHydrator($master['component']);
 
         foreach ($master['component']->select(PropertyName::RDATE) as $property) {
-            if (! $property instanceof PeriodProperty) {
+            if (! $property instanceof PeriodProperty && ! $property instanceof DateTimeProperty) {
                 continue;
             }
 
             foreach ($property->getParts() as $period) {
                 $this->countCandidate($candidateCount);
-                [$start, $end] = \explode('/', (string) $period, 2);
+                $parts = \explode('/', (string) $period, 2);
+                $start = $parts[0];
+                $end = $parts[1] ?? null;
                 $component = clone $master['component'];
                 $this->removeRecurrenceGenerators($component);
-                $this->setDateTimeProperty($component, PropertyName::DTSTART, $start, $property);
+                if ($property instanceof DateTimeProperty) {
+                    $date = clone $property;
+                    $date->name = PropertyName::DTSTART;
+                    $date->setValue($start);
+                    $component->remove(PropertyName::DTSTART);
+                    $component->add($date);
+                } else {
+                    $this->setDateTimeProperty($component, PropertyName::DTSTART, $start, $property);
+                }
                 unset($component->{PropertyName::DTEND}, $component->{PropertyName::DURATION}, $component->{PropertyName::RECURRENCE_ID});
 
-                if (\str_starts_with($end, 'P') || \str_starts_with($end, '+P')) {
+                if ($end === null) {
+                    $duration = $this->rawProperty($master['component'], PropertyName::DURATION);
+
+                    if ($duration !== null) {
+                        $component->add(clone $duration);
+                    } elseif ($masterEvent->startsAt !== null && $masterEvent->endsAt !== null && $property instanceof DateTimeProperty) {
+                        $startProperty = $this->rawProperty($component, PropertyName::DTSTART);
+                        $date = (new DateTimeMapper())->value($startProperty, $timezone->getName());
+
+                        if ($date !== null && $startProperty instanceof DateTimeProperty) {
+                            if ($property->getValueType() === 'DATE') {
+                                $endDate = clone $startProperty;
+                                $endDate->name = PropertyName::DTEND;
+                                $endDate->setValue($date->add($masterEvent->startsAt->diff($masterEvent->endsAt))->format('Ymd'));
+                                $component->add($endDate);
+                            } else {
+                                $endDate = $date->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
+                                $component->add(PropertyName::DTEND, $masterEvent->endIsFloating
+                                    ? $endDate->format('Ymd\THis')
+                                    : $endDate->utc()->format('Ymd\THis\Z'));
+                            }
+                        }
+                    }
+                } elseif (\str_starts_with($end, 'P') || \str_starts_with($end, '+P')) {
                     $component->add(PropertyName::DURATION, $end);
-                } else {
+                } elseif ($property instanceof PeriodProperty) {
                     $this->setDateTimeProperty($component, PropertyName::DTEND, $end, $property);
                 }
 
@@ -395,10 +430,8 @@ final class EventOccurrenceExpander
                 }
 
                 $seen[$key] = true;
-                $effective = isset($overrides[$key]) ? clone $overrides[$key] : $component;
-                $this->removeRecurrenceGenerators($effective);
                 $this->appendOccurrence(
-                    component: $effective,
+                    component: $component,
                     eventHydrator: $eventHydrator,
                     masterOrdinal: $master['ordinal'],
                     sequence: $sequence++,
@@ -470,7 +503,7 @@ final class EventOccurrenceExpander
         }
 
         try {
-            return 'T:' . ($recurrenceId->getDateTime($timezone)?->format('U.u') ?? (string) $recurrenceId);
+            return 'T:' . ((new DateTimeMapper())->value($recurrenceId, $timezone->getName())?->format('U.u') ?? (string) $recurrenceId);
         } catch (InvalidDataException $exception) {
             throw new UnsupportedRecurrence('A RECURRENCE-ID cannot be resolved safely.', $exception);
         }

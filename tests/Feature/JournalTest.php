@@ -114,7 +114,7 @@ ICS);
             'descriptions', 'exception_dates', 'related_to', 'recurrence_dates', 'request_statuses',
         ])
         ->and($array['descriptions'])->toBe(['First description', 'Second description'])
-        ->and(json_decode($calendar->toJson(), true, flags: JSON_THROW_ON_ERROR)['journals'][0]['descriptions'])
+        ->and(\json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR)['journals'][0]['descriptions'])
         ->toBe(['First description', 'Second description']);
 });
 

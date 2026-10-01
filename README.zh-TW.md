@@ -9,7 +9,7 @@
 
 - 從完整字串、本機檔案、stream 或 Laravel 上傳檔案讀取資料，並以可設定的 bytes 上限
   控制輸入大小。
-- 依文件順序、完全符合的 UID 或日期範圍查詢事件與待辦。
+- 依原始順序或完全符合的 UID 查詢事件、待辦與日誌；依日期範圍查詢事件。
 - 以 `CarbonImmutable`、`DateInterval` 與 Laravel Collections 取得常用行事曆欄位。
 - 取得主辦人、參與者、委派資料、提醒、recurrence 資料，以及全天與 floating time 行為。
 - 透過 `Property` 與 `Component` 取得重複、自訂及非事件資料。
@@ -90,6 +90,8 @@ $calendar = ICalendar::fromUploadedFile($uploadedFile);
 $events = $calendar->events('event@example.test');
 $event = $calendar->event('event@example.test');
 $todos = $calendar->todos();
+$journals = $calendar->journals();
+$journal = $calendar->journal('entry@example.test');
 $eventsInRange = $calendar->eventsBetween($from, $until);
 $occurrences = $calendar->occurrencesBetween($from, $until);
 $freeBusy = $calendar->component('VFREEBUSY');
@@ -103,6 +105,8 @@ components；`occurrencesBetween()` 會展開有界的 VEVENT recurrence，包�
 
 Calendar 內相符的 `VTIMEZONE` 定義優先於 host tzdata。Alarm object 提供 attachments、
 直接 properties、extension data 與防禦性複製的 raw component。
+Journal 保留重複 descriptions 與 recurrence 資料，但不提供 alarm、範圍查詢或
+recurrence expansion API。
 
 ## 驗證與警告
 
@@ -112,11 +116,10 @@ use Mattmy\ICalendar\Facades\ICalendar;
 
 try {
     $calendar = ICalendar::read($contents);
+    $warnings = $calendar->warnings();
 } catch (InvalidCalendar $exception) {
     $issues = $exception->issues();
 }
-
-$warnings = $calendar->warnings();
 ```
 
 `issues()` 說明內容遭拒絕的原因；`warnings()` 回報成功讀取後仍需留意的內容或設定。

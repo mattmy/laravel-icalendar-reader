@@ -90,8 +90,6 @@ final readonly class Reader
     /**
      * Read and validate an iCalendar document from a caller-owned stream.
      *
-     * @param  mixed  $stream
-     *
      * @throws CalendarFileUnreadable
      * @throws CalendarTooLarge
      * @throws InvalidCalendar
@@ -105,8 +103,6 @@ final readonly class Reader
 
     /**
      * Read a stream or return null only for invalid iCalendar data.
-     *
-     * @param  mixed  $stream
      *
      * @throws CalendarFileUnreadable
      * @throws CalendarTooLarge
@@ -163,12 +159,13 @@ final readonly class Reader
     private function readContents(string $contents): Calendar
     {
         $timezone = $this->timezoneResolver->resolve();
-        $validated = $this->validator->validate($contents);
+        $validated = $this->validator->validate($contents, $timezone['timezone']);
 
         return $this->hydrator->hydrate(
             component: $validated['calendar'],
             floatingTimezone: $timezone['timezone'],
             warnings: [...$timezone['warnings'], ...$validated['warnings']],
+            contents: $contents,
         );
     }
 

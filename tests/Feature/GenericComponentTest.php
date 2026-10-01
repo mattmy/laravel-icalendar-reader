@@ -5,6 +5,42 @@ declare(strict_types=1);
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Property;
 
+it('preserves interleaved direct property order in typed generic and serialized views', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Interleaved Properties//EN
+X-A:first
+X-B:middle
+X-A:last
+BEGIN:VEVENT
+UID:ordered@example.test
+DTSTAMP:20260804T000000Z
+DTSTART:20260804T010000Z
+X-A:first
+X-B:middle
+X-A:last
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    foreach ([$calendar, $calendar->events()->sole(), $calendar->components('VEVENT')->sole()] as $snapshot) {
+        $properties = $snapshot->properties()->filter(static fn (Property $property): bool => \str_starts_with($property->name, 'X-'));
+
+        expect($properties->pluck('name')->values()->all())->toBe(['X-A', 'X-B', 'X-A'])
+            ->and($properties->pluck('value')->values()->all())->toBe(['first', 'middle', 'last']);
+    }
+
+    $tree = $calendar->toComponentArray();
+
+    foreach ([$tree, $tree['components'][0]] as $component) {
+        $properties = collect($component['properties'])->filter(static fn (array $property): bool => \str_starts_with($property['name'], 'X-'));
+
+        expect($properties->pluck('name')->values()->all())->toBe(['X-A', 'X-B', 'X-A'])
+            ->and($properties->pluck('value')->values()->all())->toBe(['first', 'middle', 'last']);
+    }
+});
+
 it('preserves and exposes every property from an untyped VFREEBUSY component', function () {
     $calendar = ICalendar::read(calendarFixture('freebusy'));
     $freeBusy = $calendar->components('vfreebusy')->sole();

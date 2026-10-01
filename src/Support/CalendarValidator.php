@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar\Support;
 
-use DateTimeZone;
 use Mattmy\ICalendar\CalendarIssue;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Sabre\VObject\Component as SabreComponent;
@@ -17,12 +16,18 @@ use Sabre\VObject\Parameter;
 use Sabre\VObject\ParseException;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
+use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
 use Sabre\VObject\Property\ICalendar\Period as PeriodProperty;
 use Sabre\VObject\Reader as SabreReader;
 
 /** Parse and fully validate one iCalendar document without repairing input. */
 final class CalendarValidator
 {
+    /** Use the same calendar-defined date-time semantics as hydration. */
+    public function __construct(
+        private readonly DateTimeMapper $dateTimeMapper = new DateTimeMapper(),
+    ) {}
+
     /**
      * Return a validated calendar and its non-fatal validation warnings.
      *
@@ -30,7 +35,7 @@ final class CalendarValidator
      *
      * @throws InvalidCalendar
      */
-    public function validate(string $contents): array
+    public function validate(string $contents, string $floatingTimezone = 'UTC'): array
     {
         try {
             $document = SabreReader::read($contents, 0);
@@ -49,10 +54,14 @@ final class CalendarValidator
             );
         }
 
-        if (\preg_match_all('/^BEGIN:VCALENDAR\r?$/mi', $contents) !== 1) {
+        $unfolded = \preg_replace('/\r?\n[ \t]/', '', $contents) ?? $contents;
+
+        if (\preg_match_all('/^BEGIN:VCALENDAR\r?$/mi', $unfolded) !== 1
+            || \preg_match_all('/^END:VCALENDAR\r?$/mi', $unfolded) !== 1
+            || ! \preg_match('/\A(?:\r?\n)*BEGIN:VCALENDAR\r?\n.*\r?\nEND:VCALENDAR(?:\r?\n)*\z/is', $unfolded)) {
             throw new InvalidCalendar(
                 message: 'The reader accepts exactly one VCALENDAR object.',
-                issues: [$this->issue(CalendarIssue::LEVEL_ERROR, 'The input must contain exactly one VCALENDAR object.', $document)],
+                issues: [$this->issue(CalendarIssue::LEVEL_ERROR, 'The input must contain exactly one complete VCALENDAR object and no trailing data.', $document)],
             );
         }
 
@@ -74,7 +83,7 @@ final class CalendarValidator
             }
         }
 
-        $errors = [...$errors, ...$this->semanticIssues($document)];
+        $errors = [...$errors, ...$this->componentIssues($document, $floatingTimezone)];
 
         if ($errors !== []) {
             throw new InvalidCalendar('The iCalendar document failed validation.', $errors);
@@ -105,48 +114,44 @@ final class CalendarValidator
     }
 
     /**
-     * Return package-level RFC errors Sabre does not validate itself.
+     * Collect semantic issues from one component and its complete descendant tree.
      *
      * @return list<CalendarIssue>
      */
-    private function semanticIssues(VCalendar $calendar): array
-    {
-        $issues = [];
-
-        foreach ($calendar->children() as $child) {
-            if ($child instanceof SabreComponent) {
-                $issues = [...$issues, ...$this->componentIssues($child)];
-            }
-        }
-
-        return $issues;
-    }
-
-    /** @return list<CalendarIssue> */
-    private function componentIssues(SabreComponent $component): array
+    private function componentIssues(SabreComponent $component, string $floatingTimezone): array
     {
         $issues = [
-            ...$this->temporalIssues($component),
+            ...$this->temporalIssues($component, $floatingTimezone),
             ...($component instanceof VAlarm ? $this->alarmIssues($component) : []),
         ];
 
         foreach ($component->children() as $child) {
+            if ($child instanceof SabreProperty) {
+                $issues = [...$issues, ...$this->temporalPropertyIssues($child)];
+            }
+
             if ($child instanceof DateTimeProperty) {
                 $issues = [...$issues, ...$this->dateTimeIssues($child)];
+            } elseif ($child instanceof DurationProperty) {
+                $issues = [...$issues, ...$this->durationIssues($child)];
             } elseif ($child instanceof PeriodProperty) {
                 $issues = [...$issues, ...$this->periodIssues($child)];
             } elseif ($child instanceof SabreProperty && \strtoupper($child->getValueType()) === 'INTEGER') {
                 $issues = [...$issues, ...$this->integerIssues($child)];
             } elseif ($child instanceof SabreComponent) {
-                $issues = [...$issues, ...$this->componentIssues($child)];
+                $issues = [...$issues, ...$this->componentIssues($child, $floatingTimezone)];
             }
         }
 
         return $issues;
     }
 
-    /** @return list<CalendarIssue> */
-    private function temporalIssues(SabreComponent $component): array
+    /**
+     * Validate temporal relationships and recurrence constraints across properties.
+     *
+     * @return list<CalendarIssue>
+     */
+    private function temporalIssues(SabreComponent $component, string $floatingTimezone): array
     {
         $name = \strtoupper($component->name);
         $start = $this->property($component, PropertyName::DTSTART);
@@ -178,7 +183,7 @@ final class CalendarValidator
         if ($start instanceof DateTimeProperty && $end instanceof DateTimeProperty) {
             if ($start->getValueType() !== $end->getValueType()) {
                 $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, "DTSTART and {$endName} must use the same value type.", $end);
-            } elseif (! $this->isLater($end, $start)) {
+            } elseif (! $this->isLater($end, $start, $floatingTimezone)) {
                 $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, "{$endName} must be later than DTSTART.", $end);
             }
         }
@@ -200,6 +205,21 @@ final class CalendarValidator
         $rule = $this->property($component, PropertyName::RRULE);
         $until = $rule?->getParts()['UNTIL'] ?? null;
 
+        if ($rule !== null) {
+            $parts = $rule->getParts();
+
+            foreach (['COUNT', 'INTERVAL'] as $part) {
+                if (isset($parts[$part])
+                    && (! \is_string($parts[$part]) || ! \preg_match('/\A0*[1-9][0-9]*\z/', $parts[$part]))) {
+                    $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, "RRULE {$part} must be a positive integer.", $rule);
+                }
+            }
+
+            if (isset($parts['COUNT'], $parts['UNTIL'])) {
+                $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'RRULE COUNT and UNTIL are mutually exclusive.', $rule);
+            }
+        }
+
         if ($start instanceof DateTimeProperty && $rule instanceof SabreProperty
             && \is_string($until) && ! $this->untilMatchesStart($until, $start)) {
             $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'RRULE UNTIL must match the DTSTART value and local-time form.', $rule);
@@ -208,7 +228,45 @@ final class CalendarValidator
         return $issues;
     }
 
-    /** @return list<CalendarIssue> */
+    /**
+     * Enforce the value types and singleton values of RFC temporal properties.
+     *
+     * @return list<CalendarIssue>
+     */
+    private function temporalPropertyIssues(SabreProperty $property): array
+    {
+        $types = match ($property->name) {
+            PropertyName::DTSTART, PropertyName::DTEND, PropertyName::DUE, PropertyName::RECURRENCE_ID,
+            PropertyName::EXDATE => ['DATE', 'DATE-TIME'],
+            PropertyName::DTSTAMP, PropertyName::CREATED, PropertyName::LAST_MODIFIED,
+            PropertyName::COMPLETED => ['DATE-TIME'],
+            PropertyName::RDATE => ['DATE', 'DATE-TIME', 'PERIOD'],
+            PropertyName::DURATION => ['DURATION'],
+            PropertyName::TRIGGER => ['DURATION', 'DATE-TIME'],
+            default => null,
+        };
+
+        if ($types === null) {
+            return [];
+        }
+
+        if (! \in_array($property->getValueType(), $types, true)) {
+            return [$this->issue(CalendarIssue::LEVEL_ERROR, 'The temporal property has an invalid value type.', $property)];
+        }
+
+        if (! \in_array($property->name, [PropertyName::RDATE, PropertyName::EXDATE], true)
+            && \count($property->getParts()) !== 1) {
+            return [$this->issue(CalendarIssue::LEVEL_ERROR, 'The temporal property requires exactly one value.', $property)];
+        }
+
+        return [];
+    }
+
+    /**
+     * Enforce action-specific alarm properties and paired repeat settings.
+     *
+     * @return list<CalendarIssue>
+     */
     private function alarmIssues(VAlarm $alarm): array
     {
         $action = \strtoupper((string) $this->property($alarm, PropertyName::ACTION));
@@ -256,7 +314,11 @@ final class CalendarValidator
         return $issues;
     }
 
-    /** @return list<CalendarIssue> */
+    /**
+     * Validate date-time lexical forms and restrictions on timezone parameters.
+     *
+     * @return list<CalendarIssue>
+     */
     private function dateTimeIssues(DateTimeProperty $property): array
     {
         $name = \strtoupper((string) $property->name);
@@ -279,6 +341,10 @@ final class CalendarValidator
         }
 
         foreach ($parts as $part) {
+            if (! $this->isValidDateValue($part, $property->getValueType() === 'DATE')) {
+                $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'The date or date-time must contain a valid calendar date and time.', $property);
+            }
+
             if (\preg_match('/[+-][0-9]{4}$/', $part)) {
                 $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'Numeric UTC offsets are not valid iCalendar DATE-TIME values.', $property);
 
@@ -289,7 +355,49 @@ final class CalendarValidator
         return $issues;
     }
 
-    /** @return list<CalendarIssue> */
+    /** Validate date fields before PHP can normalize impossible dates or times. */
+    private function isValidDateValue(string $value, bool $isDate = false): bool
+    {
+        $pattern = $isDate
+            ? '/\A([0-9]{4})([0-9]{2})([0-9]{2})\z/'
+            : '/\A([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z?\z/';
+
+        if (! \preg_match($pattern, $value, $parts)
+            || ! \checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            return false;
+        }
+
+        return $isDate || (isset($parts[4], $parts[5], $parts[6])
+            && (int) $parts[4] < 24 && (int) $parts[5] < 60 && (int) $parts[6] <= 60);
+    }
+
+    /**
+     * Validate every duration value before invoking Sabre's permissive parser.
+     *
+     * @return list<CalendarIssue>
+     */
+    private function durationIssues(DurationProperty $property): array
+    {
+        foreach ($property->getParts() as $part) {
+            if (! $this->isValidDuration((string) $part)) {
+                return [$this->issue(CalendarIssue::LEVEL_ERROR, 'DURATION must use the RFC week, day, or time grammar.', $property)];
+            }
+        }
+
+        return [];
+    }
+
+    /** Reject empty or mixed-week RFC durations that Sabre otherwise normalizes. */
+    private function isValidDuration(string $value): bool
+    {
+        return (bool) \preg_match('/\A[+-]?P(?:[0-9]+W|[0-9]+D(?:T(?:[0-9]+H(?:[0-9]+M(?:[0-9]+S)?)?|[0-9]+M(?:[0-9]+S)?|[0-9]+S))?|T(?:[0-9]+H(?:[0-9]+M(?:[0-9]+S)?)?|[0-9]+M(?:[0-9]+S)?|[0-9]+S))\z/', $value);
+    }
+
+    /**
+     * Validate the original integer value and its property-specific range.
+     *
+     * @return list<CalendarIssue>
+     */
     private function integerIssues(SabreProperty $property): array
     {
         $raw = $this->originalValue($property);
@@ -331,7 +439,11 @@ final class CalendarValidator
         return (int) $raw;
     }
 
-    /** @return list<CalendarIssue> */
+    /**
+     * Validate each explicit period's endpoints or positive duration.
+     *
+     * @return list<CalendarIssue>
+     */
     private function periodIssues(PeriodProperty $property): array
     {
         $issues = [];
@@ -340,14 +452,24 @@ final class CalendarValidator
             [$start, $end] = \array_pad(\explode('/', (string) $part, 2), 2, '');
 
             try {
+                if (! $this->isValidDateValue($start)) {
+                    throw new InvalidDataException('Invalid PERIOD start.');
+                }
+
                 $startsAt = DateTimeParser::parseDateTime($start);
 
                 if (\str_starts_with($end, 'P') || \str_starts_with($end, '+P') || \str_starts_with($end, '-P')) {
+                    if (! $this->isValidDuration($end)) {
+                        throw new InvalidDataException('Invalid PERIOD duration.');
+                    }
+
                     $duration = DateTimeParser::parseDuration($end);
 
                     if ($duration->invert === 1 || $startsAt->add($duration) <= $startsAt) {
                         $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'A PERIOD duration must be positive.', $property);
                     }
+                } elseif (! $this->isValidDateValue($end)) {
+                    throw new InvalidDataException('Invalid PERIOD end.');
                 } elseif (DateTimeParser::parseDateTime($end) <= $startsAt) {
                     $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'A PERIOD end must be later than its start.', $property);
                 }
@@ -367,13 +489,19 @@ final class CalendarValidator
         return $property instanceof SabreProperty ? $property : null;
     }
 
-    /** Compare a temporal pair after Sabre has validated each lexical value. */
-    private function isLater(DateTimeProperty $later, DateTimeProperty $earlier): bool
+    /** Compare validated temporal values using the same timezone mapping as hydration. */
+    private function isLater(DateTimeProperty $later, DateTimeProperty $earlier, string $floatingTimezone): bool
     {
-        try {
-            $timezone = new DateTimeZone('UTC');
+        if (! $this->isValidDateValue((string) $later, $later->getValueType() === 'DATE')
+            || ! $this->isValidDateValue((string) $earlier, $earlier->getValueType() === 'DATE')) {
+            return true;
+        }
 
-            return $later->getDateTime($timezone) > $earlier->getDateTime($timezone);
+        try {
+            $laterValue = $this->dateTimeMapper->value($later, $floatingTimezone);
+            $earlierValue = $this->dateTimeMapper->value($earlier, $floatingTimezone);
+
+            return $laterValue === null || $earlierValue === null || $laterValue > $earlierValue;
         } catch (InvalidDataException) {
             return true;
         }
@@ -401,15 +529,20 @@ final class CalendarValidator
     private function untilMatchesStart(string $until, DateTimeProperty $start): bool
     {
         if ($start->getValueType() === 'DATE') {
-            return (bool) \preg_match('/^[0-9]{8}$/', $until);
+            return $this->isValidDateValue($until, true);
         }
 
         $form = $this->dateTimeForm($start);
 
-        return (bool) \preg_match('/^[0-9]{8}T[0-9]{6}' . ($form === 'FLOATING' ? '$/' : 'Z$/'), $until);
+        return $this->isValidDateValue($until)
+            && \str_ends_with($until, 'Z') === ($form !== 'FLOATING');
     }
 
-    /** @param list<string> $parts */
+    /**
+     * Determine whether every date-time part explicitly uses UTC.
+     *
+     * @param  list<string>  $parts
+     */
     private function allUtc(array $parts): bool
     {
         if ($parts === []) {
@@ -458,7 +591,11 @@ final class CalendarValidator
         return $property->getRawMimeDirValue();
     }
 
-    /** @param array{level: int, message: string, node: Node} $validationIssue */
+    /**
+     * Identify only Sabre's known false-positive for repeated EMAIL attachments.
+     *
+     * @param  array{level: int, message: string, node: Node}  $validationIssue
+     */
     private function isValidEmailAttachmentIssue(array $validationIssue): bool
     {
         $node = $validationIssue['node'];

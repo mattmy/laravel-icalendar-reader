@@ -20,6 +20,7 @@ final readonly class Alarm
      * The duration is a defensive snapshot of the parsed DURATION value.
      *
      * @param  list<Property>  $propertyItems
+     *
      * @internal
      */
     public function __construct(
