@@ -40,15 +40,15 @@ foreach ([1, 100, 1000] as $eventCount) {
 
     $contents = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Mattmy//Benchmark//EN\r\n"
         . $events . "END:VCALENDAR\r\n";
-    $startedAt = hrtime(true);
+    $startedAt = \hrtime(true);
     $calendar = $reader->read($contents);
-    $elapsedMilliseconds = (hrtime(true) - $startedAt) / 1_000_000;
+    $elapsedMilliseconds = (\hrtime(true) - $startedAt) / 1_000_000;
 
-    printf(
+    \printf(
         "%d events, %d bytes: %.2f ms, %.2f MiB peak memory\n",
         $calendar->events()->count(),
-        strlen($contents),
+        \strlen($contents),
         $elapsedMilliseconds,
-        memory_get_peak_usage(true) / 1024 / 1024,
+        \memory_get_peak_usage(true) / 1024 / 1024,
     );
 }

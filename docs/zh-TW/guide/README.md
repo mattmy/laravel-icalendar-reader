@@ -74,6 +74,9 @@ normalized component tree。這些方法不會產生 `.ics`，也不保證 byte 
 
 ## 驗證與例外
 
+底層無法安全展開的 recurrence（包含 SECONDLY／MINUTELY、BYSECOND／BYMINUTE）會拋出
+`UnsupportedRecurrence`，不會靜默忽略規則。
+
 每次輸入都使用嚴格 Sabre options 解析，再經 Sabre 與 package-level RFC semantic
 validation。單一 Calendar API 只接受恰好一個 VCALENDAR object。Level 2 issue 由
 `warnings()` 回傳；level 3 代表文件不合法。

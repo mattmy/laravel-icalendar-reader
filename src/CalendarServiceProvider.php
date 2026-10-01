@@ -24,7 +24,7 @@ final class CalendarServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->publishes([
-            __DIR__ . '/../config/icalendar_reader.php' => \config_path('icalendar_reader.php'),
+            __DIR__ . '/../config/icalendar_reader.php' => config_path('icalendar_reader.php'),
         ], 'icalendar-reader-config');
     }
 }

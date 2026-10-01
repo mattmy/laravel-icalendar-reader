@@ -18,11 +18,33 @@ use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Todo;
 
 /**
+ * Export domain snapshots and the complete normalized component tree.
+ *
+ * @phpstan-type ParameterMap array<string, string|list<string>>
+ *
+ * @phpstan-import-type PropertyArray from Property
+ *
+ * @phpstan-type ComponentArray array{name: string, properties: list<PropertyArray>, components: list<array<string, mixed>>}
+ * @phpstan-type IssueArray array{level: int, code: string, message: string, source: string, line: ?int, component: ?string, property: ?string}
+ * @phpstan-type OrganizerArray array{address: string, email: ?string, name: ?string, sent_by: ?string, directory: ?string, parameters: ParameterMap}
+ * @phpstan-type AttendeeArray array{address: string, email: ?string, name: ?string, role: ?string, status: ?string, rsvp: ?bool, type: ?string, delegated_from: list<string>, delegated_to: list<string>, parameters: ParameterMap}
+ * @phpstan-type AlarmTriggerArray array{is_relative: bool, is_absolute: bool, duration: ?string, date_time: ?string, related_to: ?string}
+ * @phpstan-type AlarmArray array{action: ?string, trigger: ?AlarmTriggerArray, description: ?string, summary: ?string, attendees: list<AttendeeArray>, attachments: list<PropertyArray>, repeat: ?int, duration: ?string}
+ * @phpstan-type GeoArray array{latitude: float, longitude: float}
+ * @phpstan-type EventArray array{uid: ?string, summary: ?string, description: ?string, location: ?string, starts_at: ?string, ends_at: ?string, start_is_date: bool, end_is_date: bool, start_is_floating: bool, end_is_floating: bool, is_all_day: bool, last_day: ?string, duration: ?string, timestamp: ?string, created_at: ?string, last_modified_at: ?string, status: ?string, classification: ?string, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, url: ?string, organizer: ?OrganizerArray, attendees: list<AttendeeArray>, alarms: list<AlarmArray>, categories: list<string>, geo: ?GeoArray, transparency: ?string, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
+ * @phpstan-type TodoArray array{uid: ?string, timestamp: ?string, classification: ?string, completed_at: ?string, created_at: ?string, description: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, due_at: ?string, due_is_date: bool, due_is_floating: bool, duration: ?string, last_modified_at: ?string, location: ?string, organizer: ?OrganizerArray, percent_complete: ?int, priority: ?int, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, attendees: list<AttendeeArray>, categories: list<string>, alarms: list<AlarmArray>, geo: ?GeoArray, comments: list<string>, contacts: list<string>, resources: list<string>, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, exception_dates: list<PropertyArray>, request_statuses: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>}
+ * @phpstan-type JournalArray array{uid: ?string, timestamp: ?string, classification: ?string, created_at: ?string, starts_at: ?string, start_is_date: bool, start_is_floating: bool, last_modified_at: ?string, organizer: ?OrganizerArray, recurrence_id: ?string, recurrence_id_is_date: bool, recurrence_id_is_floating: bool, sequence: ?int, status: ?string, summary: ?string, url: ?string, recurrence_rule: ?PropertyArray, attachments: list<PropertyArray>, attendees: list<AttendeeArray>, categories: list<string>, comments: list<string>, contacts: list<string>, descriptions: list<string>, exception_dates: list<PropertyArray>, related_to: list<PropertyArray>, recurrence_dates: list<PropertyArray>, request_statuses: list<PropertyArray>}
+ * @phpstan-type CalendarArray array{version: ?string, product_id: ?string, method: ?string, calendar_scale: ?string, floating_timezone: string, events: list<EventArray>, todos: list<TodoArray>, journals: list<JournalArray>, warnings: list<IssueArray>}
+ *
  * @internal
  */
 final class CalendarSerializer
 {
-    /** @return array<string, mixed> */
+    /**
+     * Export the fixed domain-oriented calendar representation.
+     *
+     * @return CalendarArray
+     */
     public function toArray(Calendar $calendar): array
     {
         return [
@@ -38,7 +60,11 @@ final class CalendarSerializer
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export every ordered property and component without collapsing unknown data.
+     *
+     * @return ComponentArray
+     */
     public function componentArray(Calendar $calendar): array
     {
         return [
@@ -48,7 +74,11 @@ final class CalendarSerializer
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export one event using the shared leaf mappings.
+     *
+     * @return EventArray
+     */
     private function event(Event $event): array
     {
         return [
@@ -77,14 +107,14 @@ final class CalendarSerializer
             'sequence' => $event->sequence,
             'url' => $event->url,
             'organizer' => $event->organizer === null ? null : $this->organizer($event->organizer),
-            'attendees' => $event->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
-            'alarms' => $event->alarms->map(fn (Alarm $alarm): array => $this->alarm($alarm))->all(),
-            'categories' => $event->categories->values()->all(),
+            'attendees' => \array_values($event->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all()),
+            'alarms' => \array_values($event->alarms->map(fn (Alarm $alarm): array => $this->alarm($alarm))->all()),
+            'categories' => \array_values($event->categories->all()),
             'geo' => $event->geo,
             'transparency' => $event->transparency,
-            'comments' => $event->comments->values()->all(),
-            'contacts' => $event->contacts->values()->all(),
-            'resources' => $event->resources->values()->all(),
+            'comments' => \array_values($event->comments->all()),
+            'contacts' => \array_values($event->contacts->all()),
+            'resources' => \array_values($event->resources->all()),
             'recurrence_rule' => $event->recurrenceRule?->toArray(),
             'attachments' => $this->properties($event->attachments),
             'exception_dates' => $this->properties($event->exceptionDates),
@@ -94,7 +124,11 @@ final class CalendarSerializer
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export one todo using the shared leaf mappings.
+     *
+     * @return TodoArray
+     */
     private function todo(Todo $todo): array
     {
         return [
@@ -110,17 +144,21 @@ final class CalendarSerializer
             'recurrence_id' => $this->dateTime($todo->recurrenceId, $todo->recurrenceIdIsDate),
             'recurrence_id_is_date' => $todo->recurrenceIdIsDate, 'recurrence_id_is_floating' => $todo->recurrenceIdIsFloating,
             'sequence' => $todo->sequence, 'status' => $todo->status, 'summary' => $todo->summary, 'url' => $todo->url,
-            'attendees' => $todo->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
-            'categories' => $todo->categories->values()->all(), 'alarms' => $todo->alarms->map(fn (Alarm $alarm): array => $this->alarm($alarm))->all(),
-            'geo' => $todo->geo, 'comments' => $todo->comments->values()->all(), 'contacts' => $todo->contacts->values()->all(),
-            'resources' => $todo->resources->values()->all(), 'recurrence_rule' => $todo->recurrenceRule?->toArray(),
+            'attendees' => \array_values($todo->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all()),
+            'categories' => \array_values($todo->categories->all()), 'alarms' => \array_values($todo->alarms->map(fn (Alarm $alarm): array => $this->alarm($alarm))->all()),
+            'geo' => $todo->geo, 'comments' => \array_values($todo->comments->all()), 'contacts' => \array_values($todo->contacts->all()),
+            'resources' => \array_values($todo->resources->all()), 'recurrence_rule' => $todo->recurrenceRule?->toArray(),
             'attachments' => $this->properties($todo->attachments), 'exception_dates' => $this->properties($todo->exceptionDates),
             'request_statuses' => $this->properties($todo->requestStatuses), 'related_to' => $this->properties($todo->relatedTo),
             'recurrence_dates' => $this->properties($todo->recurrenceDates),
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export one journal while retaining repeated descriptions.
+     *
+     * @return JournalArray
+     */
     private function journal(Journal $journal): array
     {
         return [
@@ -133,15 +171,19 @@ final class CalendarSerializer
             'recurrence_id_is_date' => $journal->recurrenceIdIsDate, 'recurrence_id_is_floating' => $journal->recurrenceIdIsFloating,
             'sequence' => $journal->sequence, 'status' => $journal->status, 'summary' => $journal->summary, 'url' => $journal->url,
             'recurrence_rule' => $journal->recurrenceRule?->toArray(), 'attachments' => $this->properties($journal->attachments),
-            'attendees' => $journal->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
-            'categories' => $journal->categories->values()->all(), 'comments' => $journal->comments->values()->all(),
-            'contacts' => $journal->contacts->values()->all(), 'descriptions' => $journal->descriptions->values()->all(),
+            'attendees' => \array_values($journal->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all()),
+            'categories' => \array_values($journal->categories->all()), 'comments' => \array_values($journal->comments->all()),
+            'contacts' => \array_values($journal->contacts->all()), 'descriptions' => \array_values($journal->descriptions->all()),
             'exception_dates' => $this->properties($journal->exceptionDates), 'related_to' => $this->properties($journal->relatedTo),
             'recurrence_dates' => $this->properties($journal->recurrenceDates), 'request_statuses' => $this->properties($journal->requestStatuses),
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export an organizer and its complete parameters.
+     *
+     * @return OrganizerArray
+     */
     private function organizer(Organizer $organizer): array
     {
         return [
@@ -154,7 +196,11 @@ final class CalendarSerializer
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export an attendee and its delegation parameters.
+     *
+     * @return AttendeeArray
+     */
     private function attendee(Attendee $attendee): array
     {
         return [
@@ -165,13 +211,17 @@ final class CalendarSerializer
             'status' => $attendee->status,
             'rsvp' => $attendee->rsvp,
             'type' => $attendee->type,
-            'delegated_from' => $attendee->delegatedFrom->values()->all(),
-            'delegated_to' => $attendee->delegatedTo->values()->all(),
+            'delegated_from' => \array_values($attendee->delegatedFrom->all()),
+            'delegated_to' => \array_values($attendee->delegatedTo->all()),
             'parameters' => $attendee->parameters(),
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Export an alarm and its relative or absolute trigger.
+     *
+     * @return AlarmArray
+     */
     private function alarm(Alarm $alarm): array
     {
         return [
@@ -185,48 +235,52 @@ final class CalendarSerializer
             ],
             'description' => $alarm->description,
             'summary' => $alarm->summary,
-            'attendees' => $alarm->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all(),
+            'attendees' => \array_values($alarm->attendees->map(fn (Attendee $attendee): array => $this->attendee($attendee))->all()),
             'attachments' => $this->properties($alarm->attachments),
             'repeat' => $alarm->repeat,
             'duration' => $this->duration($alarm->duration),
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Recursively export a normalized component and its direct children.
+     *
+     * @return ComponentArray
+     */
     private function component(Component $component): array
     {
         return [
             'name' => $component->name,
-            'properties' => $component->properties()->map(static fn (Property $property): array => $property->toArray())->all(),
-            'components' => $component->components()->map(fn (Component $child): array => $this->component($child))->all(),
+            'properties' => \array_values($component->properties()->map(static fn (Property $property): array => $property->toArray())->all()),
+            'components' => \array_values($component->components()->map(fn (Component $child): array => $this->component($child))->all()),
         ];
     }
 
     /**
+     * Export an ordered list of complete property representations.
+     *
      * @param  Collection<int, Property>  $properties
-     * @return list<array<string, mixed>>
+     * @return list<PropertyArray>
      */
     private function properties(Collection $properties): array
     {
         return \array_values($properties->map(static fn (Property $property): array => $property->toArray())->all());
     }
 
-    /**
-     * @param  CarbonImmutable|null  $value
-     */
+    /** Format a typed date without losing its DATE versus DATE-TIME distinction. */
     private function dateTime(?CarbonImmutable $value, bool $isDate): ?string
     {
         return $value === null ? null : ($isDate ? $value->toDateString() : $value->toIso8601String());
     }
 
-    /**
-     * @param  DateInterval|null  $duration
-     */
+    /** Format a duration using the established iCalendar-style representation. */
     private function duration(?DateInterval $duration): ?string
     {
         if ($duration === null) {
             return null;
-        } $date = ($duration->y ? $duration->y . 'Y' : '') . ($duration->m ? $duration->m . 'M' : '') . ($duration->d ? $duration->d . 'D' : '');
+        }
+
+        $date = ($duration->y ? $duration->y . 'Y' : '') . ($duration->m ? $duration->m . 'M' : '') . ($duration->d ? $duration->d . 'D' : '');
         $time = ($duration->h ? $duration->h . 'H' : '') . ($duration->i ? $duration->i . 'M' : '') . ($duration->s ? $duration->s . 'S' : '');
 
         return ($duration->invert ? '-' : '') . 'P' . ($date === '' && $time === '' ? '0D' : $date) . ($time === '' ? '' : 'T' . $time);

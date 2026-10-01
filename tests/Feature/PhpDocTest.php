@@ -1,9 +1,14 @@
 <?php
 
 declare(strict_types=1);
+use Mattmy\ICalendar\Alarm;
+use Mattmy\ICalendar\Attendee;
+use Mattmy\ICalendar\Event;
+use Mattmy\ICalendar\Journal;
+use Mattmy\ICalendar\Property;
 
 it('documents every package class and declared method', function () {
-    $source = realpath(__DIR__ . '/../../src');
+    $source = \realpath(__DIR__ . '/../../src');
 
     expect($source)->not->toBeFalse();
 
@@ -14,10 +19,10 @@ it('documents every package class and declared method', function () {
             continue;
         }
 
-        $relative = substr($file->getPathname(), strlen($source) + 1, -4);
-        $class = 'Mattmy\\ICalendar\\' . str_replace(DIRECTORY_SEPARATOR, '\\', $relative);
+        $relative = \substr($file->getPathname(), \strlen($source) + 1, -4);
+        $class = 'Mattmy\\ICalendar\\' . \str_replace(\DIRECTORY_SEPARATOR, '\\', $relative);
 
-        expect(class_exists($class) || interface_exists($class) || trait_exists($class))->toBeTrue();
+        expect(\class_exists($class) || \interface_exists($class) || \trait_exists($class))->toBeTrue();
 
         $reflection = new ReflectionClass($class);
 
@@ -37,31 +42,31 @@ it('documents every package class and declared method', function () {
 
 it('documents promoted public properties whose native types need refinement', function () {
     $properties = [
-        [Mattmy\ICalendar\Property::class, 'value'],
-        [Mattmy\ICalendar\Property::class, 'values'],
-        [Mattmy\ICalendar\Event::class, 'endsAt'],
-        [Mattmy\ICalendar\Event::class, 'allDay'],
-        [Mattmy\ICalendar\Event::class, 'startIsFloating'],
-        [Mattmy\ICalendar\Event::class, 'endIsFloating'],
-        [Mattmy\ICalendar\Event::class, 'lastDay'],
-        [Mattmy\ICalendar\Event::class, 'duration'],
-        [Mattmy\ICalendar\Event::class, 'attendees'],
-        [Mattmy\ICalendar\Event::class, 'alarms'],
-        [Mattmy\ICalendar\Event::class, 'categories'],
-        [Mattmy\ICalendar\Journal::class, 'startIsDate'],
-        [Mattmy\ICalendar\Journal::class, 'startIsFloating'],
-        [Mattmy\ICalendar\Journal::class, 'recurrenceIdIsDate'],
-        [Mattmy\ICalendar\Journal::class, 'recurrenceIdIsFloating'],
-        [Mattmy\ICalendar\Journal::class, 'attachments'],
-        [Mattmy\ICalendar\Journal::class, 'attendees'],
-        [Mattmy\ICalendar\Journal::class, 'categories'],
-        [Mattmy\ICalendar\Journal::class, 'comments'],
-        [Mattmy\ICalendar\Journal::class, 'contacts'],
-        [Mattmy\ICalendar\Journal::class, 'descriptions'],
-        [Mattmy\ICalendar\Attendee::class, 'delegatedFrom'],
-        [Mattmy\ICalendar\Attendee::class, 'delegatedTo'],
-        [Mattmy\ICalendar\Alarm::class, 'attendees'],
-        [Mattmy\ICalendar\Alarm::class, 'duration'],
+        [Property::class, 'value'],
+        [Property::class, 'values'],
+        [Event::class, 'endsAt'],
+        [Event::class, 'allDay'],
+        [Event::class, 'startIsFloating'],
+        [Event::class, 'endIsFloating'],
+        [Event::class, 'lastDay'],
+        [Event::class, 'duration'],
+        [Event::class, 'attendees'],
+        [Event::class, 'alarms'],
+        [Event::class, 'categories'],
+        [Journal::class, 'startIsDate'],
+        [Journal::class, 'startIsFloating'],
+        [Journal::class, 'recurrenceIdIsDate'],
+        [Journal::class, 'recurrenceIdIsFloating'],
+        [Journal::class, 'attachments'],
+        [Journal::class, 'attendees'],
+        [Journal::class, 'categories'],
+        [Journal::class, 'comments'],
+        [Journal::class, 'contacts'],
+        [Journal::class, 'descriptions'],
+        [Attendee::class, 'delegatedFrom'],
+        [Attendee::class, 'delegatedTo'],
+        [Alarm::class, 'attendees'],
+        [Alarm::class, 'duration'],
     ];
 
     foreach ($properties as [$class, $property]) {

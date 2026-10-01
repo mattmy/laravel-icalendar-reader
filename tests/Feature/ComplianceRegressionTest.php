@@ -93,7 +93,7 @@ it('keeps throwing and nullable APIs symmetric for invalid calendar contents', f
 })->with(['string', 'path', 'stream', 'upload']);
 
 it('does not hide invalid uploaded file errors in nullable APIs', function () {
-    $upload = new UploadedFile(__FILE__, 'calendar.ics', null, UPLOAD_ERR_NO_FILE, false);
+    $upload = new UploadedFile(__FILE__, 'calendar.ics', null, \UPLOAD_ERR_NO_FILE, false);
 
     expect(fn () => app(Reader::class)->tryFromUploadedFile($upload))
         ->toThrow(InvalidCalendarSource::class);
@@ -189,10 +189,10 @@ it('keeps calendar and issue serialization contracts stable', function () {
     expect(CalendarIssue::LEVEL_WARNING)->toBe(2)
         ->and(CalendarIssue::LEVEL_ERROR)->toBe(3)
         ->and($calendar->jsonSerialize())->toBe($calendar->toArray())
-        ->and(\json_decode($calendar->toJson(JSON_PRETTY_PRINT), true, flags: JSON_THROW_ON_ERROR))
+        ->and(\json_decode($calendar->toJson(\JSON_PRETTY_PRINT), true, flags: \JSON_THROW_ON_ERROR))
         ->toBe($calendar->toArray())
         ->and($issue->jsonSerialize())->toBe($issue->toArray())
-        ->and(\json_encode($issue, JSON_THROW_ON_ERROR))->toBe(\json_encode($issue->toArray(), JSON_THROW_ON_ERROR));
+        ->and(\json_encode($issue, \JSON_THROW_ON_ERROR))->toBe(\json_encode($issue->toArray(), \JSON_THROW_ON_ERROR));
 
     $invalidUtf8 = new Calendar(
         version: "\xB1\x31",

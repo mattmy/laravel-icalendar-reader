@@ -68,8 +68,6 @@ final class BoundedInputReader
     /**
      * Read from the caller-owned stream at its current position.
      *
-     * @param  mixed  $stream
-     *
      * @throws CalendarFileUnreadable
      * @throws CalendarTooLarge
      * @throws InvalidCalendarSource

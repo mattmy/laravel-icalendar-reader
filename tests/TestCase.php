@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar\Tests;
 
+use Illuminate\Foundation\Application;
 use Mattmy\ICalendar\CalendarServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
+/** Provide the Laravel host and deterministic defaults for package tests. */
 abstract class TestCase extends Orchestra
 {
     /**
      * Register the package service provider.
      *
-     * @param  \Illuminate\Foundation\Application  $app
+     * @param  Application  $app
      * @return list<class-string>
      */
     protected function getPackageProviders($app): array
@@ -23,7 +25,7 @@ abstract class TestCase extends Orchestra
     /**
      * Configure deterministic package defaults for each test.
      *
-     * @param  \Illuminate\Foundation\Application  $app
+     * @param  Application  $app
      */
     protected function defineEnvironment($app): void
     {

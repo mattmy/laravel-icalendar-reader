@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [0.6.0] - 2026-10-01
+
+### Fixed
+
+- Reject incomplete calendars, dates and times that do not exist, malformed durations,
+  incorrect date/time value types, and invalid recurrence counts before creating read models.
+- Use the calendar's own timezone rules when checking that an event or task ends after it starts,
+  so validation agrees with the dates returned by the reader.
+- Keep properties and components in their original order, even when names are mixed or repeated.
+- Fix missing recurring events at the start of a query range, including events with no duration,
+  RDATE entries listed out of order, and rescheduled events moved into or lasting into the range.
+- Follow the calendar's VTIMEZONE rules and UTC UNTIL cutoff when expanding local recurring events.
+  Report unsupported recurrence options instead of silently ignoring them.
+- Update formatting rules and array/JSON type documentation to match the project's PHP 8.2 standards.
+
 ## [0.5.0] - 2026-08-31
 
 ### Changed
@@ -82,4 +97,6 @@ All notable changes to this project are documented here. The format follows Keep
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
 [0.3.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.3.0
 [0.4.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.4.0
-[0.5.0]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.4.0...HEAD
+[0.5.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.5.0
+[0.6.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.6.0
+[Unreleased]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.5.0...HEAD

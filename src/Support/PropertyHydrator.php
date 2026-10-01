@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar\Support;
 
-use Carbon\CarbonImmutable;
-use DateInterval;
 use LogicException;
 use Mattmy\ICalendar\Property;
 use Sabre\VObject\Component as SabreComponent;
@@ -16,8 +14,8 @@ use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
 /**
  * Hydrate ordered iCalendar properties without collapsing repeated data.
  *
- * @phpstan-type StructuredValue array<array-key, string|list<string>>
- * @phpstan-type PropertyAtom bool|int|float|string|CarbonImmutable|DateInterval|StructuredValue
+ * @phpstan-import-type StructuredValue from Property
+ * @phpstan-import-type PropertyAtom from Property
  */
 final readonly class PropertyHydrator
 {
@@ -37,11 +35,16 @@ final readonly class PropertyHydrator
 
         foreach ($component->children() as $child) {
             if ($child instanceof SabreProperty) {
-                $properties[] = $this->hydrateProperty($child, $floatingTimezone);
+                $properties[] = $child;
             }
         }
 
-        return $properties;
+        \usort($properties, static fn (SabreProperty $left, SabreProperty $right): int => ($left->lineIndex ?? \PHP_INT_MAX) <=> ($right->lineIndex ?? \PHP_INT_MAX));
+
+        return \array_map(
+            fn (SabreProperty $property): Property => $this->hydrateProperty($property, $floatingTimezone),
+            $properties,
+        );
     }
 
     /**

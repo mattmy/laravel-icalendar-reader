@@ -49,7 +49,7 @@ it('counts recurrence candidates before EXDATE filtering', function () {
         . "DTSTAMP:20200101T000000Z\r\n"
         . "DTSTART:20200101T090000Z\r\n"
         . "RRULE:FREQ=DAILY;COUNT=3502\r\n"
-        . 'EXDATE:' . implode(',', $excluded) . "\r\n"
+        . 'EXDATE:' . \implode(',', $excluded) . "\r\n"
         . "END:VEVENT\r\n"
         . "END:VCALENDAR\r\n");
 
@@ -290,14 +290,14 @@ it('rejects additional calendar objects instead of silently truncating them', fu
 it('hydrates deeply nested extension components without quadratic cloning', function () {
     $depth = 200;
     $contents = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//RFC Hardening//EN\r\n"
-        . str_repeat("BEGIN:X-NEST\r\nX-VALUE:1\r\n", $depth)
-        . str_repeat("END:X-NEST\r\n", $depth)
+        . \str_repeat("BEGIN:X-NEST\r\nX-VALUE:1\r\n", $depth)
+        . \str_repeat("END:X-NEST\r\n", $depth)
         . "END:VCALENDAR\r\n";
 
-    memory_reset_peak_usage();
-    $before = memory_get_usage(true);
+    \memory_reset_peak_usage();
+    $before = \memory_get_usage(true);
     $calendar = ICalendar::read($contents);
-    $growth = memory_get_peak_usage(true) - $before;
+    $growth = \memory_get_peak_usage(true) - $before;
 
     expect($growth)->toBeLessThan(10 * 1024 * 1024)
         ->and($calendar->components('X-NEST'))->toHaveCount(1)

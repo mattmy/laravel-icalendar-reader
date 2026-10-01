@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Mattmy\ICalendar\Facades\ICalendar;
 
+/** Return the local path of a published interoperability fixture. */
 function publicFixturePath(string $name): string
 {
     return __DIR__ . "/../Fixtures/public/{$name}.ics";
@@ -101,13 +102,13 @@ it('maps VTODO fields and emits the fixed domain and normalized outputs', functi
         'priority', 'sequence', 'url', 'organizer', 'attendees', 'alarms', 'categories',
     ])->not->toHaveKey('all_day')
         ->and($output['todos'])->toBe([])
-        ->and(json_decode($calendar->toJson(), true, flags: JSON_THROW_ON_ERROR))
+        ->and(\json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR))
         ->toBe($calendar->toArray());
 });
 
 it('reads every valid supplied public fixture without hiding non-event data', function () {
-    foreach (range(1, 6) as $number) {
-        $path = (glob(publicFixturePath(sprintf('%02d-*', $number))) ?: [])[0] ?? null;
+    foreach (\range(1, 6) as $number) {
+        $path = (\glob(publicFixturePath(\sprintf('%02d-*', $number))) ?: [])[0] ?? null;
 
         expect($path)->not->toBeNull();
 
