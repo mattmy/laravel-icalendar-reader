@@ -3,9 +3,150 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Mattmy\ICalendar\Calendar;
+use Mattmy\ICalendar\CalendarIssue;
 use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
+use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Facades\ICalendar;
+
+/** Read one event against caller-supplied calendar observances. */
+function observanceCalendar(string $observances, string $target, string $eventProperties = ''): Calendar
+{
+    return ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Observances//EN\n"
+        . "BEGIN:VTIMEZONE\nTZID:Custom/Boundary\n{$observances}END:VTIMEZONE\n"
+        . "BEGIN:VEVENT\nUID:boundary\nDTSTAMP:20000101T000000Z\nDTSTART;TZID=Custom/Boundary:{$target}\n"
+        . $eventProperties . "END:VEVENT\nEND:VCALENDAR\n");
+}
+
+it('maps padded observance month tokens without changing the original rule', function () {
+    $calendar = observanceCalendar("BEGIN:STANDARD\nDTSTART:20260101T000000\n"
+        . "RRULE:FREQ=YEARLY;BYMONTH=01,2\nTZOFFSETFROM:+1000\nTZOFFSETTO:+0900\nEND:STANDARD\n"
+        . "BEGIN:DAYLIGHT\nDTSTART:20261231T120000\nTZOFFSETFROM:+0900\nTZOFFSETTO:+1000\nEND:DAYLIGHT\n", '20270101T120000');
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+09:00');
+    expect($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty();
+    expect(\str_contains($calendar->rawComponent()->serialize(), 'BYMONTH=01,2'))->toBeTrue();
+});
+
+it('compares observance UNTIL inclusively in UTC using TZOFFSETFROM', function (string $from, string $cutoff, int $delta, string $expected) {
+    $until = CarbonImmutable::parse($cutoff, 'UTC')->addSeconds($delta)->format('Ymd\THis\Z');
+    $observances = "BEGIN:STANDARD\nDTSTART:20260101T000000\nRRULE:FREQ=DAILY;UNTIL={$until}\n"
+        . "TZOFFSETFROM:{$from}\nTZOFFSETTO:+0900\nEND:STANDARD\n"
+        . "BEGIN:DAYLIGHT\nDTSTART:20260101T120000\nTZOFFSETFROM:+0900\nTZOFFSETTO:+1000\nEND:DAYLIGHT\n";
+    $calendar = observanceCalendar($observances, '20260103T120000', "RRULE:FREQ=DAILY;COUNT=2\n");
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe($expected)
+        ->and($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty()
+        ->and(\str_contains($calendar->rawComponent()->serialize(), "UNTIL={$until}"))->toBeTrue();
+    foreach ($calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-03 UTC'), CarbonImmutable::parse('2026-01-05 UTC')) as $event) {
+        expect($event->startsAt?->format('P'))->toBe($expected);
+    }
+})->with([
+    ['+0800', '2026-01-01 16:00:00', -1, '+10:00'],
+    ['+0800', '2026-01-01 16:00:00', 0, '+09:00'],
+    ['+0800', '2026-01-01 16:00:00', 1, '+09:00'],
+    ['-0800', '2026-01-02 08:00:00', -1, '+10:00'],
+    ['-0800', '2026-01-02 08:00:00', 0, '+09:00'],
+    ['-0800', '2026-01-02 08:00:00', 1, '+09:00'],
+]);
+
+it('does not spend an observance budget on candidates beyond UTC UNTIL or restrict independent dates', function () {
+    $last = CarbonImmutable::parse('2000-01-01 UTC')->addDays(3499)->subHours(9)->format('Ymd\THis\Z');
+    $target = CarbonImmutable::parse('2000-01-01 UTC')->addDays(3501)->format('Ymd\THis');
+    $calendar = observanceCalendar("BEGIN:STANDARD\nDTSTART:20000101T000000\nRRULE:FREQ=DAILY;UNTIL={$last}\n"
+        . "RDATE:{$target}\nTZOFFSETFROM:+0900\nTZOFFSETTO:+0900\nEND:STANDARD\n", $target);
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+09:00')
+        ->and($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty();
+});
+
+it('resolves only the applicable supported UTC offset without initial fallback', function (string $from, string $to, string $target, ?string $offset) {
+    $observance = "BEGIN:STANDARD\nDTSTART:20000101T000000\nTZOFFSETFROM:{$from}\nTZOFFSETTO:{$to}\nEND:STANDARD\n";
+    $calendar = observanceCalendar($observance, $target);
+    $event = $calendar->events()->sole();
+
+    expect($event->startsAt?->format('P'))->toBe($offset);
+    expect($calendar->warnings()->where('code', 'mapping_warning')->isNotEmpty())->toBe($offset === null);
+    expect($event->property('DTSTART')?->rawValue())->toBe($target);
+    expect($calendar->component('VEVENT')?->property('DTSTART')?->rawValue())->toBe($target);
+    expect($calendar->toArray()['events'][0]['starts_at'])->toBe($offset === null ? null : $event->startsAt?->toIso8601String());
+    expect(\str_contains($calendar->rawComponent()->serialize(), 'TZOFFSETTO:' . $to))->toBeTrue();
+
+    if ($offset === null) {
+        expect($event->property('DTSTART')?->value)->toBe($target);
+    }
+})->with([
+    'positive effective seconds' => ['+0800', '+090030', '20260803T120000', null],
+    'negative effective seconds' => ['-0800', '-090030', '20260803T120000', null],
+    'positive initial seconds' => ['+080030', '+0900', '19991231T120000', null],
+    'negative initial seconds' => ['-080030', '-0900', '19991231T120000', null],
+    'positive minutes' => ['+0800', '+0900', '20260803T120000', '+09:00'],
+    'negative minutes' => ['-0800', '-0900', '20260803T120000', '-09:00'],
+    'positive zero seconds' => ['+080000', '+090000', '20260803T120000', '+09:00'],
+    'negative zero seconds' => ['-080000', '-090000', '20260803T120000', '-09:00'],
+    'supported initial minutes' => ['+0800', '+090030', '19991231T120000', '+08:00'],
+    'supported initial zero seconds' => ['-080000', '-090030', '19991231T120000', '-08:00'],
+]);
+
+it('ignores unsupported observances that do not determine the target offset', function () {
+    $observances = "BEGIN:STANDARD\nDTSTART:19700101T000000\nTZOFFSETFROM:+080030\nTZOFFSETTO:+090030\nEND:STANDARD\n"
+        . "BEGIN:STANDARD\nDTSTART:20000101T000000\nTZOFFSETFROM:+090030\nTZOFFSETTO:+1000\nEND:STANDARD\n"
+        . "BEGIN:DAYLIGHT\nDTSTART:20300101T000000\nTZOFFSETFROM:+1000\nTZOFFSETTO:+110030\nEND:DAYLIGHT\n";
+    $observances .= "BEGIN:DAYLIGHT\nDTSTART:20400101T000000\nRRULE:FREQ=YEARLY;UNTIL=20500101T000000Z\n"
+        . "TZOFFSETFROM:+100030\nTZOFFSETTO:+110030\nEND:DAYLIGHT\n";
+    $calendar = observanceCalendar($observances, '20260803T120000');
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+10:00');
+    expect($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty();
+});
+
+it('preserves the start when only a derived endpoint exceeds the observance budget', function (string $duration) {
+    $start = CarbonImmutable::parse('2000-01-01 02:00 UTC')->addDays(3499)->format('Ymd\THis');
+    $calendar = observanceCalendar("BEGIN:STANDARD\nDTSTART:20000101T000000\nRRULE:FREQ=DAILY;COUNT=3501\n"
+        . "TZOFFSETFROM:+0900\nTZOFFSETTO:+0900\nEND:STANDARD\n", $start, "DURATION:{$duration}\nRRULE:FREQ=DAILY;COUNT=2\n");
+    expect($calendar->events()->sole()->startsAt)->not->toBeNull()
+        ->and($calendar->events()->sole()->endsAt)->toBeNull()
+        ->and($calendar->events()->sole()->property('DURATION')?->rawValue())->toBe($duration)
+        ->and($calendar->warnings()->where('code', 'mapping_warning')->where('property', 'DURATION'))->toHaveCount(1)
+        ->and(ICalendar::tryRead($calendar->rawComponent()->serialize()))->not->toBeNull()
+        ->and(fn () => $calendar->occurrencesBetween(CarbonImmutable::parse($start, 'UTC')->subDay(), CarbonImmutable::parse($start, 'UTC')->addDays(2)))->toThrow(UnsupportedRecurrence::class);
+})->with(['P1D', 'PT24H']);
+
+it('bounds each observance RRULE while resolving the exact final permitted transition', function (string $rule, int $day, bool $resolved) {
+    $target = CarbonImmutable::parse('2000-01-01 UTC')->addDays($day)->addHours(2)->format('Ymd\THis');
+    $calendar = observanceCalendar("BEGIN:STANDARD\nDTSTART:20000101T000000\nRRULE:{$rule}\nTZOFFSETFROM:+0800\nTZOFFSETTO:+0900\nEND:STANDARD\n", $target);
+    $event = $calendar->events()->sole();
+
+    expect($event->startsAt?->format('P'))->toBe($resolved ? '+09:00' : null);
+    expect($calendar->warnings()->contains(static fn (CalendarIssue $issue): bool => $issue->code === 'mapping_warning' && $issue->property === 'DTSTART'))->toBe(! $resolved);
+    expect($event->property('DTSTART')?->rawValue())->toBe($target);
+    expect($calendar->component('VEVENT')?->property('DTSTART')?->rawValue())->toBe($target);
+
+    if (! $resolved) {
+        expect($event->property('DTSTART')?->value)->toBe($target);
+    }
+})->with([
+    'exhausted at 3500' => ['FREQ=DAILY;COUNT=3500', 3499, true],
+    'next transition beyond target' => ['FREQ=DAILY;COUNT=3501', 3499, true],
+    'needs transition 3501' => ['FREQ=DAILY;COUNT=3501', 3500, false],
+    'unbounded needs transition 3501' => ['FREQ=DAILY', 3500, false],
+]);
+
+it('keeps observance budgets independent and excludes standalone DTSTART and RDATE', function () {
+    $target = CarbonImmutable::parse('2000-01-01 UTC')->addDays(3500)->format('Ymd\THis');
+    $observances = "BEGIN:STANDARD\nDTSTART:20000101T000000\nRRULE:FREQ=DAILY;COUNT=3500\nRDATE:{$target}\n"
+        . "TZOFFSETFROM:+0900\nTZOFFSETTO:+0900\nEND:STANDARD\n"
+        . "BEGIN:DAYLIGHT\nDTSTART:20000101T010000\nRRULE:FREQ=DAILY;COUNT=3500\n"
+        . "TZOFFSETFROM:+0900\nTZOFFSETTO:+1000\nEND:DAYLIGHT\n";
+    $calendar = observanceCalendar($observances, $target, "RRULE:FREQ=DAILY;COUNT=1\n");
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+09:00');
+    expect($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty();
+    expect($calendar->occurrencesBetween(
+        CarbonImmutable::parse($target, 'UTC')->subDay(),
+        CarbonImmutable::parse($target, 'UTC')->addDay(),
+    ))->toHaveCount(1);
+});
 
 it('bounds infinite recurrence expansion by the requested interval', function () {
     $calendar = ICalendar::read(<<<'ICS'
@@ -142,12 +283,12 @@ ICS);
     $alarm = $calendar->events()->sole()->alarms->sole();
 
     $raw = $alarm->rawComponent();
-    $raw->SUMMARY = 'Changed';
+    $raw->__set('SUMMARY', 'Changed');
 
     expect($alarm->attachments)->toHaveCount(2)
         ->and($alarm->properties('ATTACH'))->toHaveCount(2)
-        ->and($alarm->property('X-ALARM-ID')?->value)->toBe('custom')
-        ->and((string) $alarm->rawComponent()->SUMMARY)->toBe('Subject')
+        ->and($alarm->property('X-ALARM-ID')?->value)->toBe('custom');
+    expect(calendarRawProperty($alarm->rawComponent(), 'SUMMARY'))->toBe('Subject')
         ->and($calendar->toArray()['events'][0]['alarms'][0]['attachments'])->toHaveCount(2);
 });
 

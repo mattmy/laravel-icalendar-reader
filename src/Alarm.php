@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VAlarm;
 
-/** Represent an immutable typed view of one VALARM component. */
+/** Represent an readonly typed view of one VALARM component. */
 final readonly class Alarm
 {
     use QueriesProperties;
@@ -42,7 +42,10 @@ final readonly class Alarm
     /** Return a deep clone of the underlying low-level alarm component. */
     public function rawComponent(): VAlarm
     {
-        return clone $this->component;
+        $copy = clone $this->component;
+        $copy->parent = null;
+
+        return $copy;
     }
 
     /**

@@ -19,7 +19,7 @@ use InvalidArgumentException;
 final readonly class Property
 {
     /**
-     * Hydrate an immutable property snapshot from normalized parser data.
+     * Hydrate an readonly property snapshot from normalized parser data.
      *
      * @param  PropertyValue  $value
      * @param  list<PropertyAtom>  $values
@@ -62,7 +62,7 @@ final readonly class Property
         return $this->parameterItems[$name] ?? null;
     }
 
-    /** Return Sabre's decoded but otherwise untyped property value. */
+    /** Return Sabre's normalized raw text for the property value. */
     public function rawValue(): string
     {
         return $this->rawValue;

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Mattmy\ICalendar\Support;
 
 use Carbon\CarbonImmutable;
+use DateInterval;
 use DateTimeInterface;
 use DateTimeZone;
+use Exception;
 use Mattmy\ICalendar\CalendarIssue;
 use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Component\VCalendar;
@@ -32,6 +34,57 @@ final class DateTimeMapper
         return $this->values($property, $floatingTimezone)[0] ?? null;
     }
 
+    /** Apply nominal calendar days before accurate elapsed time using the source timezone. */
+    public function durationEnd(?SabreProperty $start, DateInterval $duration, string $floatingTimezone): ?CarbonImmutable
+    {
+        if (! $start instanceof DateTimeProperty) {
+            return null;
+        }
+
+        $value = $this->value($start, $floatingTimezone);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if ($duration->d !== 0) {
+            $local = CarbonImmutable::instance($this->isDate($start)
+                ? DateTimeParser::parseDate((string) $start)
+                : DateTimeParser::parseDateTime((string) $start))->addDays($duration->d);
+            $endpoint = clone $start;
+            $endpoint->setValue($local->format($this->isDate($start) ? 'Ymd' : 'Ymd\THis')
+                . (\str_ends_with((string) $start, 'Z') ? 'Z' : ''));
+
+            try {
+                $value = $this->value($endpoint, $floatingTimezone);
+            } catch (InvalidDataException) {
+                return null;
+            }
+
+            if ($value === null) {
+                return null;
+            }
+        }
+
+        $seconds = $duration->h * 3600 + $duration->i * 60 + $duration->s;
+
+        if ($seconds === 0) {
+            return $value;
+        }
+
+        $instant = $value->utc()->addSeconds($seconds);
+        $tzid = $start[ParameterName::TZID];
+
+        if (! $tzid instanceof Parameter) {
+            return $instant->setTimezone($value->getTimezone());
+        }
+
+        $definition = $this->matchingTimezone($start, (string) $tzid);
+        $offset = $definition === null ? null : $this->timezoneOffsetAt($definition, $instant->format('Ymd\THis\Z'), true);
+
+        return $offset === null ? null : $instant->setTimezone(new DateTimeZone($offset));
+    }
+
     /**
      * Convert all resolvable values, or return null when TZID cannot be trusted.
      *
@@ -39,13 +92,15 @@ final class DateTimeMapper
      */
     public function values(DateTimeProperty $property, string $floatingTimezone): ?array
     {
-        if (! $this->hasResolvableTimezone($property)) {
+        $values = $this->dateTimes($property, $floatingTimezone);
+
+        if ($values === null) {
             return null;
         }
 
         return \array_map(
             static fn (DateTimeInterface $value): CarbonImmutable => CarbonImmutable::instance($value),
-            $this->dateTimes($property, $floatingTimezone),
+            $values,
         );
     }
 
@@ -123,7 +178,7 @@ final class DateTimeMapper
         }
 
         foreach ($property->getParts() as $part) {
-            if ($this->timezoneOffsetAt($definition, (string) $part) === null) {
+            if ($this->timezoneOffsetAt($definition, ParserValue::text($part)) === null) {
                 return false;
             }
         }
@@ -134,50 +189,55 @@ final class DateTimeMapper
     /**
      * Resolve all date-time values using the calendar definition when present.
      *
-     * @return list<DateTimeInterface>
+     * @return list<DateTimeInterface>|null
      */
-    private function dateTimes(DateTimeProperty $property, string $floatingTimezone): array
+    private function dateTimes(DateTimeProperty $property, string $floatingTimezone): ?array
     {
         $parameter = $property[ParameterName::TZID];
 
-        if (! $parameter instanceof Parameter) {
+        if ($parameter === null) {
             return \array_values(\array_filter(
                 $property->getDateTimes(new DateTimeZone($floatingTimezone)),
                 static fn (mixed $value): bool => $value instanceof DateTimeInterface,
             ));
         }
 
+        if (! $parameter instanceof Parameter) {
+            return null;
+        }
+
         $timezone = $parameter->getValue();
 
         if (! \is_string($timezone)) {
-            return [];
+            return null;
         }
 
         $definition = $this->matchingTimezone($property, $timezone);
 
         if ($definition === null) {
-            return [];
+            return null;
         }
 
         $values = [];
 
         foreach ($property->getParts() as $part) {
-            $raw = (string) $part;
+            $raw = ParserValue::text($part);
             $offset = $this->timezoneOffsetAt($definition, $raw);
 
             if ($offset === null) {
-                return [];
+                return null;
             }
 
             $resolved = new DateTimeZone($offset);
 
             try {
                 $candidate = new DateTimeZone($timezone);
+                $candidateValue = DateTimeParser::parseDateTime($raw, $candidate);
 
-                if (DateTimeParser::parseDateTime($raw, $candidate)->format('P') === $offset) {
+                if ($candidateValue->format('P') === $offset && $candidateValue->format('Ymd\THis') === $raw) {
                     $resolved = $candidate;
                 }
-            } catch (\Exception) {
+            } catch (Exception) {
                 // The calendar offset remains authoritative when no equivalent host zone exists.
             }
 
@@ -201,7 +261,8 @@ final class DateTimeMapper
         }
 
         foreach ($root->select('VTIMEZONE') as $definition) {
-            if ($definition instanceof SabreComponent && (string) ($definition->TZID ?? '') === $timezone) {
+            if ($definition instanceof SabreComponent
+                && (string) ($this->property($definition, 'TZID') ?? '') === $timezone) {
                 return $definition;
             }
         }
@@ -209,8 +270,8 @@ final class DateTimeMapper
         return null;
     }
 
-    /** Resolve the effective observance offset for one local date-time. */
-    private function timezoneOffsetAt(SabreComponent $definition, string $raw): ?string
+    /** Resolve an observance offset for a local wall clock or an accurate UTC instant. */
+    private function timezoneOffsetAt(SabreComponent $definition, string $raw, bool $utc = false): ?string
     {
         try {
             $target = DateTimeParser::parseDateTime($raw);
@@ -242,26 +303,49 @@ final class DateTimeMapper
                 continue;
             }
 
-            if ($initialAt === null || $start < $initialAt) {
-                $initialAt = $start;
+            $transitions = [$start];
+            $fromSeconds = $this->offsetSeconds((string) $offsetFrom);
+            $toSeconds = $this->offsetSeconds((string) $offsetTo);
+            // Local gaps use the pre-transition offset; overlaps use their first occurrence.
+            $shift = $utc ? -$fromSeconds : 0;
+            $targetTimestamp = $target->getTimestamp();
+
+            if ($initialAt === null || $start->getTimestamp() + $shift < $initialAt) {
+                $initialAt = $start->getTimestamp() + $shift;
                 $initialOffset = $this->normalizeUtcOffset((string) $offsetFrom);
             }
 
-            $transitions = [$start];
-
             foreach ($observance->select(PropertyName::RRULE) as $rule) {
-                if (! $rule instanceof SabreProperty) {
+                if (! $rule instanceof SabreProperty || $start->getTimestamp() + $shift > $targetTimestamp) {
                     continue;
                 }
 
                 try {
-                    $iterator = new RRuleIterator($rule->getParts(), $start);
+                    $parts = ParserValue::recurrenceParts($rule);
+                    $until = $parts['UNTIL'] ?? null;
+                    unset($parts['UNTIL']);
+                    $cutoff = null;
+
+                    if (\is_string($until)) {
+                        $from = $this->normalizeUtcOffset((string) $offsetFrom);
+
+                        if ($from === null) {
+                            return null;
+                        }
+
+                        // Compare the naive wall clock against UNTIL expressed using the pre-transition offset.
+                        $cutoff = DateTimeParser::parseDateTime($until)
+                            ->setTimezone(new DateTimeZone($from))->format('Ymd\THis');
+                    }
+
+                    $iterator = new RRuleIterator($parts, $start);
                     $count = 0;
 
                     while ($iterator->valid() && $count++ < self::MAX_OBSERVANCE_TRANSITIONS) {
                         $transition = $iterator->current();
 
-                        if (! $transition instanceof DateTimeInterface || $transition > $target) {
+                        if (! $transition instanceof DateTimeInterface || $transition->getTimestamp() + $shift > $targetTimestamp
+                            || ($cutoff !== null && $transition->format('Ymd\THis') > $cutoff)) {
                             break;
                         }
 
@@ -269,7 +353,10 @@ final class DateTimeMapper
                         $iterator->next();
                     }
 
-                    if ($iterator->valid() && $iterator->current() <= $target) {
+                    $next = $iterator->current();
+
+                    if ($next instanceof DateTimeInterface && $next->getTimestamp() + $shift <= $targetTimestamp
+                        && ($cutoff === null || $next->format('Ymd\THis') <= $cutoff)) {
                         return null;
                     }
                 } catch (InvalidDataException) {
@@ -284,14 +371,29 @@ final class DateTimeMapper
             }
 
             foreach ($transitions as $transition) {
-                if ($transition <= $target && ($effectiveAt === null || $transition > $effectiveAt)) {
-                    $effectiveAt = $transition;
-                    $effectiveOffset = $this->normalizeUtcOffset((string) $offsetTo);
+                if (! $transition instanceof DateTimeInterface) {
+                    continue;
+                }
+
+                $at = $transition->getTimestamp() + $shift;
+
+                if ($at <= $targetTimestamp && ($effectiveAt === null || $at > $effectiveAt)) {
+                    $effectiveAt = $at;
+                    $inGap = ! $utc && $targetTimestamp < $at + \max(0, $toSeconds - $fromSeconds);
+                    $effectiveOffset = $this->normalizeUtcOffset((string) ($inGap ? $offsetFrom : $offsetTo));
                 }
             }
         }
 
-        return $effectiveOffset ?? $initialOffset;
+        return $effectiveAt !== null ? $effectiveOffset : $initialOffset;
+    }
+
+    /** Express a validated RFC offset as seconds for transition boundary comparisons. */
+    private function offsetSeconds(string $offset): int
+    {
+        $seconds = (int) \substr($offset, 1, 2) * 3600 + (int) \substr($offset, 3, 2) * 60 + (int) \substr($offset, 5, 2);
+
+        return \str_starts_with($offset, '-') ? -$seconds : $seconds;
     }
 
     /** Return the first direct property with the requested name. */

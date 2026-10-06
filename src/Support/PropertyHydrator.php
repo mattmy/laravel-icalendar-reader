@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar\Support;
 use LogicException;
 use Mattmy\ICalendar\Property;
 use Sabre\VObject\Component as SabreComponent;
+use Sabre\VObject\Parameter;
 use Sabre\VObject\Property as SabreProperty;
 use Sabre\VObject\Property\ICalendar\DateTime as DateTimeProperty;
 use Sabre\VObject\Property\ICalendar\Duration as DurationProperty;
@@ -57,8 +58,12 @@ final readonly class PropertyHydrator
         $parameters = [];
 
         foreach ($property->parameters() as $parameter) {
+            if (! $parameter instanceof Parameter) {
+                throw new LogicException('Sabre returned an invalid property parameter.');
+            }
+
             $parts = \array_values(\array_map(
-                static fn (mixed $part): string => (string) $part,
+                static fn (mixed $part): string => ParserValue::text($part),
                 $parameter->getParts(),
             ));
             $parameters[\strtoupper((string) $parameter->name)] = \count($parts) === 1
@@ -105,7 +110,7 @@ final readonly class PropertyHydrator
             $values = $this->dateTimeMapper->values($property, $floatingTimezone);
 
             return $values ?? \array_values(\array_map(
-                static fn (mixed $part): string => (string) $part,
+                static fn (mixed $part): string => ParserValue::text($part),
                 $property->getParts(),
             ));
         }
@@ -127,11 +132,17 @@ final readonly class PropertyHydrator
                     return self::structuredPropertyValue($part);
                 }
 
+                if (\is_bool($part) || \is_int($part) || \is_float($part)) {
+                    return $part;
+                }
+
+                $part = ParserValue::text($part);
+
                 return match ($type) {
-                    'BOOLEAN' => \strtoupper((string) $part) === 'TRUE',
+                    'BOOLEAN' => \strtoupper($part) === 'TRUE',
                     'FLOAT' => (float) $part,
                     'INTEGER' => (int) $part,
-                    default => (string) $part,
+                    default => $part,
                 };
             },
             $parts,
@@ -150,8 +161,8 @@ final readonly class PropertyHydrator
 
         foreach ($value as $key => $item) {
             $structured[(string) $key] = \is_array($item)
-                ? \array_values(\array_map(static fn (mixed $part): string => (string) $part, $item))
-                : (string) $item;
+                ? \array_values(\array_map(static fn (mixed $part): string => ParserValue::text($part), $item))
+                : ParserValue::text($item);
         }
 
         return $structured;

@@ -10,11 +10,15 @@ use Mattmy\ICalendar\Exceptions\InvalidConfiguration;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Support\ParameterName;
 use Mattmy\ICalendar\Support\PropertyName;
+use PHPUnit\Framework\Assert;
 use Sabre\VObject\ParseException;
 
 it('reads and validates a calendar through the facade', function () {
     $calendar = ICalendar::read(calendarFixture('basic-event'));
     $event = $calendar->events()->first();
+    if ($event === null) {
+        throw new RuntimeException('Expected event is missing.');
+    }
 
     expect($calendar)
         ->toBeInstanceOf(Calendar::class)
@@ -119,7 +123,7 @@ it('throws structured invalid calendar errors for syntax failures', function () 
         return;
     }
 
-    $this->fail('Expected InvalidCalendar to be thrown.');
+    Assert::fail('Expected InvalidCalendar to be thrown.');
 });
 
 it('rejects a non-calendar root with a stable issue', function () {
@@ -138,7 +142,7 @@ VCF);
         return;
     }
 
-    $this->fail('Expected InvalidCalendar to be thrown.');
+    Assert::fail('Expected InvalidCalendar to be thrown.');
 });
 
 it('maps level three validation failures and keeps nullable behavior explicit', function () {
@@ -164,7 +168,7 @@ ICS;
         return;
     }
 
-    $this->fail('Expected InvalidCalendar to be thrown.');
+    Assert::fail('Expected InvalidCalendar to be thrown.');
 });
 
 it('returns null only for invalid calendar contents', function () {
@@ -182,10 +186,10 @@ it('rejects invalid size configuration before parsing', function (mixed $value) 
     expect(fn () => ICalendar::read(calendarFixture('basic-event')))
         ->toThrow(InvalidConfiguration::class);
 })->with([
-    'null' => null,
-    'string' => '1024',
-    'zero' => 0,
-    'negative' => -1,
+    'null' => [null],
+    'string' => ['1024'],
+    'zero' => [0],
+    'negative' => [-1],
 ]);
 
 it('uses UTC and records a warning for invalid application timezone', function () {
@@ -201,8 +205,8 @@ it('uses UTC and records a warning for invalid application timezone', function (
 it('returns defensive clones of raw Sabre components', function () {
     $calendar = ICalendar::read(calendarFixture('basic-event'));
     $raw = $calendar->rawComponent();
-    $raw->VERSION = '9.9';
+    $raw->__set('VERSION', '9.9');
 
-    expect((string) $calendar->rawComponent()->VERSION)->toBe('2.0')
+    expect(calendarRawProperty($calendar->rawComponent(), 'VERSION'))->toBe('2.0')
         ->and($calendar->version)->toBe('2.0');
 });

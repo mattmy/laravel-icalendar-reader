@@ -9,6 +9,7 @@ use DateTimeZone;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
+use Mattmy\ICalendar\Exceptions\UnresolvableEventRange;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
@@ -34,6 +35,7 @@ final class EventOccurrenceExpander
      * @return Collection<int, Event>
      *
      * @throws RecurrenceLimitExceeded
+     * @throws UnresolvableEventRange
      * @throws UnsupportedRecurrence
      */
     public function expand(
@@ -88,6 +90,12 @@ final class EventOccurrenceExpander
             $startProperty = $this->rawProperty($master['component'], PropertyName::DTSTART);
             $localTimezone = $startProperty?->offsetGet(ParameterName::TZID);
             $masterEvent = $eventHydrator($master['component']);
+
+            if ($masterEvent->startsAt === null
+                || ($this->requiresEnd($masterEvent) && $masterEvent->endsAt === null)) {
+                throw new UnsupportedRecurrence('A recurrence master date cannot be resolved safely.');
+            }
+
             $until = $this->rawProperty($master['component'], PropertyName::RRULE)?->getParts()['UNTIL'] ?? null;
             $ruleUntil = $localTimezone instanceof Parameter && \is_string($until)
                 ? DateTimeParser::parseDateTime($until)->getTimestamp()
@@ -119,6 +127,7 @@ final class EventOccurrenceExpander
 
             $this->appendRDateOccurrences(
                 master: $master,
+                masterEvent: $masterEvent,
                 eventHydrator: $eventHydrator,
                 timezone: $timezone,
                 exclusions: $exclusions,
@@ -151,7 +160,8 @@ final class EventOccurrenceExpander
                             $property = $this->rawProperty($component, $name);
 
                             if ($property !== null) {
-                                $property->offsetSet(ParameterName::TZID, clone $localTimezone);
+                                $property->offsetUnset(ParameterName::TZID);
+                                $property->add(ParameterName::TZID, (string) $localTimezone);
                             }
                         }
 
@@ -163,7 +173,7 @@ final class EventOccurrenceExpander
 
                         $start = $mappedStart;
 
-                        if (isset($master['component']->{PropertyName::DTEND}) && $masterEvent->startsAt !== null && $masterEvent->endsAt !== null) {
+                        if (isset($master['component']->{PropertyName::DTEND}) && $masterEvent->endsAt !== null) {
                             $end = $mappedStart->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
                             $component->remove(PropertyName::DTEND);
                             $component->add(PropertyName::DTEND, $end->utc()->format('Ymd\THis\Z'));
@@ -255,7 +265,7 @@ final class EventOccurrenceExpander
 
         $rule = $this->rawProperty($master['component'], PropertyName::RRULE)?->getParts() ?? [];
 
-        if (\in_array(\strtoupper((string) ($rule['FREQ'] ?? '')), ['SECONDLY', 'MINUTELY'], true)
+        if (\in_array(\strtoupper(ParserValue::text($rule['FREQ'] ?? '')), ['SECONDLY', 'MINUTELY'], true)
             || isset($rule['BYSECOND']) || isset($rule['BYMINUTE'])) {
             throw new UnsupportedRecurrence('This recurrence frequency or time expansion is not supported safely.');
         }
@@ -290,7 +300,11 @@ final class EventOccurrenceExpander
         return false;
     }
 
-    /** Count one logical candidate and enforce the per-query work bound. */
+    /**
+     * Count one logical candidate and enforce the per-query work bound.
+     *
+     * @throws RecurrenceLimitExceeded
+     */
     private function countCandidate(int &$candidateCount): void
     {
         if (++$candidateCount > self::MAX_CANDIDATES) {
@@ -307,19 +321,27 @@ final class EventOccurrenceExpander
     {
         $component = clone $master;
         unset($component->{PropertyName::EXDATE}, $component->{PropertyName::RDATE});
-        $localTimezone = $this->rawProperty($component, PropertyName::DTSTART)?->offsetGet(ParameterName::TZID);
+        $start = $this->rawProperty($component, PropertyName::DTSTART);
+        $localTimezone = $start?->offsetGet(ParameterName::TZID);
+        $rule = $this->rawProperty($component, PropertyName::RRULE);
 
-        if ($localTimezone instanceof Parameter) {
-            unset($component->{PropertyName::DTEND});
-            $this->rawProperty($component, PropertyName::DTSTART)->offsetUnset(ParameterName::TZID);
+        if ($rule !== null) {
+            $parts = ParserValue::recurrenceParts($rule);
 
-            $rule = $this->rawProperty($component, PropertyName::RRULE);
-
-            if ($rule !== null) {
-                $parts = $rule->getParts();
-                unset($parts['UNTIL']);
-                $rule->setValue($parts);
+            if ($start instanceof DateTimeProperty && $start->getValueType() === 'DATE') {
+                unset($parts['BYHOUR']);
             }
+
+            if ($localTimezone instanceof Parameter) {
+                unset($parts['UNTIL']);
+            }
+
+            $rule->setValue($parts);
+        }
+
+        if ($start !== null && $localTimezone instanceof Parameter) {
+            unset($component->{PropertyName::DTEND});
+            $start->offsetUnset(ParameterName::TZID);
         }
 
         return $component;
@@ -329,6 +351,8 @@ final class EventOccurrenceExpander
      * Map every EXDATE into the same instant keys used by generated occurrences.
      *
      * @return array<string, true>
+     *
+     * @throws UnsupportedRecurrence
      */
     private function recurrenceExclusions(VEvent $master, DateTimeZone $timezone): array
     {
@@ -339,7 +363,10 @@ final class EventOccurrenceExpander
                 continue;
             }
 
-            foreach ((new DateTimeMapper())->values($property, $timezone->getName()) ?? [] as $dateTime) {
+            $dates = (new DateTimeMapper())->values($property, $timezone->getName())
+                ?? throw new UnsupportedRecurrence('An EXDATE cannot be resolved safely.');
+
+            foreach ($dates as $dateTime) {
                 $exclusions['T:' . $dateTime->format('U.u')] = true;
             }
         }
@@ -355,9 +382,13 @@ final class EventOccurrenceExpander
      * @param  array<string, true>  $exclusions
      * @param  array<string, true>  $seen
      * @param  list<array{event: Event, masterOrdinal: int, sequence: int}>  $occurrences
+     *
+     * @throws RecurrenceLimitExceeded
+     * @throws UnsupportedRecurrence
      */
     private function appendRDateOccurrences(
         array $master,
+        Event $masterEvent,
         Closure $eventHydrator,
         DateTimeZone $timezone,
         array $exclusions,
@@ -368,8 +399,6 @@ final class EventOccurrenceExpander
         int $untilTimestamp,
         array &$occurrences,
     ): void {
-        $masterEvent = $eventHydrator($master['component']);
-
         foreach ($master['component']->select(PropertyName::RDATE) as $property) {
             if (! $property instanceof PeriodProperty && ! $property instanceof DateTimeProperty) {
                 continue;
@@ -377,7 +406,7 @@ final class EventOccurrenceExpander
 
             foreach ($property->getParts() as $period) {
                 $this->countCandidate($candidateCount);
-                $parts = \explode('/', (string) $period, 2);
+                $parts = \explode('/', ParserValue::text($period), 2);
                 $start = $parts[0];
                 $end = $parts[1] ?? null;
                 $component = clone $master['component'];
@@ -448,7 +477,8 @@ final class EventOccurrenceExpander
     {
         $component->remove($name);
         $tzid = $period['TZID'];
-        $component->add($name, $value, $tzid instanceof Parameter ? ['TZID' => (string) $tzid] : []);
+        $property = $component->add($name, $value, $tzid instanceof Parameter ? ['TZID' => (string) $tzid] : []);
+        $property->parent = $component;
     }
 
     /**
@@ -456,6 +486,9 @@ final class EventOccurrenceExpander
      *
      * @param  Closure(VEvent): Event  $eventHydrator
      * @param  list<array{event: Event, masterOrdinal: int, sequence: int}>  $occurrences
+     *
+     * @throws UnresolvableEventRange
+     * @throws UnsupportedRecurrence
      */
     private function appendOccurrence(
         VEvent $component,
@@ -472,17 +505,26 @@ final class EventOccurrenceExpander
 
         $event = $eventHydrator($component);
 
-        if ($event->startsAt === null) {
+        if ($this->rawProperty($component, PropertyName::RECURRENCE_ID) !== null
+            && ($event->startsAt === null || ($this->requiresEnd($event) && $event->endsAt === null))) {
+            throw new UnsupportedRecurrence('A recurrence occurrence date cannot be resolved safely.');
+        }
+
+        if ($event->startsAt === null || $event->startsAt->getTimestamp() >= $untilTimestamp) {
             return;
         }
 
         $start = $event->startsAt->getTimestamp();
 
         if ($event->endsAt === null) {
-            if ($fromTimestamp > $start || $start >= $untilTimestamp) {
+            if ($this->requiresEnd($event)) {
+                throw new UnresolvableEventRange('An event endpoint required by the range query cannot be resolved safely.');
+            }
+
+            if ($fromTimestamp > $start) {
                 return;
             }
-        } elseif ($start >= $untilTimestamp || $event->endsAt->getTimestamp() <= $fromTimestamp) {
+        } elseif ($event->endsAt->getTimestamp() <= $fromTimestamp) {
             return;
         }
 
@@ -493,7 +535,11 @@ final class EventOccurrenceExpander
         ];
     }
 
-    /** Return a stable key for an effective recurrence instance. */
+    /**
+     * Return a resolved instant key for an effective recurrence instance.
+     *
+     * @throws UnsupportedRecurrence
+     */
     private function recurrenceKey(VEvent $component, DateTimeZone $timezone): string
     {
         $recurrenceId = $this->rawProperty($component, PropertyName::RECURRENCE_ID);
@@ -503,10 +549,19 @@ final class EventOccurrenceExpander
         }
 
         try {
-            return 'T:' . ((new DateTimeMapper())->value($recurrenceId, $timezone->getName())?->format('U.u') ?? (string) $recurrenceId);
+            $date = (new DateTimeMapper())->value($recurrenceId, $timezone->getName())
+                ?? throw new UnsupportedRecurrence('A RECURRENCE-ID cannot be resolved safely.');
+
+            return 'T:' . $date->format('U.u');
         } catch (InvalidDataException $exception) {
             throw new UnsupportedRecurrence('A RECURRENCE-ID cannot be resolved safely.', $exception);
         }
+    }
+
+    /** Distinguish a real point event from an event requiring an endpoint. */
+    private function requiresEnd(Event $event): bool
+    {
+        return $event->startIsDate || $event->hasProperty(PropertyName::DTEND) || $event->hasProperty(PropertyName::DURATION);
     }
 
     /** Remove recurrence generators from a concrete generated occurrence. */

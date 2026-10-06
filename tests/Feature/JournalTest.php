@@ -113,9 +113,14 @@ ICS);
             'url', 'recurrence_rule', 'attachments', 'attendees', 'categories', 'comments', 'contacts',
             'descriptions', 'exception_dates', 'related_to', 'recurrence_dates', 'request_statuses',
         ])
-        ->and($array['descriptions'])->toBe(['First description', 'Second description'])
-        ->and(\json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR)['journals'][0]['descriptions'])
-        ->toBe(['First description', 'Second description']);
+        ->and($array['descriptions'])->toBe(['First description', 'Second description']);
+
+    $decoded = \json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR);
+    if (! \is_array($decoded) || ! \is_array($decoded['journals'] ?? null)
+        || ! \is_array($decoded['journals'][0] ?? null)) {
+        throw new RuntimeException('Expected a journal JSON object.');
+    }
+    expect($decoded['journals'][0]['descriptions'] ?? null)->toBe(['First description', 'Second description']);
 });
 
 it('keeps journal raw components and query collections isolated', function () {
@@ -127,10 +132,10 @@ it('keeps journal raw components and query collections isolated', function () {
         ->and($journal->startIsDate)->toBeTrue()
         ->and($journal->descriptions->all())->toBe(['今天確認了 jCal 的陣列結構。']);
 
-    $raw->SUMMARY = 'Changed';
+    $raw->__set('SUMMARY', 'Changed');
     $properties->pop();
 
-    expect((string) $journal->rawComponent()->SUMMARY)->toBe('Sabre VObject 研究筆記')
+    expect(calendarRawProperty($journal->rawComponent(), 'SUMMARY'))->toBe('Sabre VObject 研究筆記')
         ->and($journal->properties())->toHaveCount(8);
 });
 

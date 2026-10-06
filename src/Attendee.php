@@ -6,7 +6,7 @@ namespace Mattmy\ICalendar;
 
 use Illuminate\Support\Collection;
 
-/** Represent an immutable typed view of an ATTENDEE property. */
+/** Represent an readonly typed view of an ATTENDEE property. */
 final readonly class Attendee
 {
     /**

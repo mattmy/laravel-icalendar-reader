@@ -51,13 +51,23 @@ final readonly class CalendarHydrator
 
         foreach ($component->select('VEVENT') as $eventComponent) {
             if ($eventComponent instanceof VEvent) {
-                $events[] = $this->hydrateEvent($eventComponent, $floatingTimezone);
+                $event = $this->hydrateEvent($eventComponent, $floatingTimezone);
+                $events[] = $event;
+                if ($event->startsAt !== null && $event->endsAt === null && $event->duration !== null
+                    && $this->firstProperty($eventComponent, PropertyName::DTEND) === null) {
+                    $warnings[] = $this->derivedEndIssue('VEVENT');
+                }
             }
         }
 
         foreach ($component->select('VTODO') as $todoComponent) {
             if ($todoComponent instanceof VTodo) {
-                $todos[] = $this->hydrateTodo($todoComponent, $floatingTimezone);
+                $todo = $this->hydrateTodo($todoComponent, $floatingTimezone);
+                $todos[] = $todo;
+                if ($todo->startsAt !== null && $todo->dueAt === null && $todo->duration !== null
+                    && $this->firstProperty($todoComponent, PropertyName::DUE) === null) {
+                    $warnings[] = $this->derivedEndIssue('VTODO');
+                }
             }
         }
 
@@ -90,6 +100,19 @@ final readonly class CalendarHydrator
         );
     }
 
+    /** Report a failed calculation separately from unresolved source properties. */
+    private function derivedEndIssue(string $component): CalendarIssue
+    {
+        return new CalendarIssue(
+            level: CalendarIssue::LEVEL_WARNING,
+            code: 'mapping_warning',
+            message: 'A duration-derived endpoint could not be resolved reliably.',
+            source: 'mapping',
+            component: $component,
+            property: PropertyName::DURATION,
+        );
+    }
+
     /** Hydrate one event without exposing mutable parser state. */
     private function hydrateEvent(VEvent $component, string $floatingTimezone): Event
     {
@@ -105,11 +128,11 @@ final readonly class CalendarHydrator
             ? $durationProperty->getDateInterval()
             : null;
 
-        if ($endsAt === null && $startsAt !== null && $duration !== null) {
-            $endsAt = $startsAt->add($duration);
-        } elseif ($endsAt === null && $startsAt !== null && $allDay) {
+        if ($endProperty === null && $startsAt !== null && $duration !== null) {
+            $endsAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
+        } elseif ($endProperty === null && $duration === null && $startsAt !== null && $allDay) {
             $duration = new DateInterval('P1D');
-            $endsAt = $startsAt->addDay();
+            $endsAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
         } elseif ($startsAt !== null && $endsAt !== null) {
             $duration = $startsAt->toDateTimeImmutable()->diff($endsAt->toDateTimeImmutable());
         }
@@ -122,11 +145,11 @@ final readonly class CalendarHydrator
             startsAt: $startsAt,
             endsAt: $endsAt,
             startIsDate: $this->dateTimeMapper->isDate($startProperty),
-            endIsDate: $endProperty === null && $endsAt !== null
+            endIsDate: $endProperty === null && $duration !== null
                 ? $this->dateTimeMapper->isDate($startProperty)
                 : $this->dateTimeMapper->isDate($endProperty),
             startIsFloating: $this->dateTimeMapper->isFloating($startProperty),
-            endIsFloating: $endProperty === null && $endsAt !== null
+            endIsFloating: $endProperty === null && $duration !== null
                 ? $this->dateTimeMapper->isFloating($startProperty)
                 : $this->dateTimeMapper->isFloating($endProperty),
             lastDay: $allDay && $endsAt !== null ? $endsAt->subDay()->startOfDay() : null,
@@ -180,7 +203,7 @@ final readonly class CalendarHydrator
             : null;
 
         if ($dueProperty === null && $startsAt !== null && $duration !== null) {
-            $dueAt = $startsAt->add($duration);
+            $dueAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
         } elseif ($duration === null && $startsAt !== null && $dueAt !== null) {
             $duration = $startsAt->toDateTimeImmutable()->diff($dueAt->toDateTimeImmutable());
         }
@@ -196,10 +219,10 @@ final readonly class CalendarHydrator
             startIsDate: $this->dateTimeMapper->isDate($startProperty),
             startIsFloating: $this->dateTimeMapper->isFloating($startProperty),
             dueAt: $dueAt,
-            dueIsDate: $dueProperty === null && $dueAt !== null
+            dueIsDate: $dueProperty === null && $duration !== null
                 ? $this->dateTimeMapper->isDate($startProperty)
                 : $this->dateTimeMapper->isDate($dueProperty),
-            dueIsFloating: $dueProperty === null && $dueAt !== null
+            dueIsFloating: $dueProperty === null && $duration !== null
                 ? $this->dateTimeMapper->isFloating($startProperty)
                 : $this->dateTimeMapper->isFloating($dueProperty),
             duration: $duration,
@@ -442,13 +465,20 @@ final readonly class CalendarHydrator
                 continue;
             }
 
-            if ($stack === [] || (! $boundary && \preg_match('/^([A-Z0-9-]+)[;:]/i', $line, $parts) !== 1)) {
+            if ($stack === []) {
+                continue;
+            }
+
+            if ($boundary) {
+                $name = \strtoupper(\substr($line, 6));
+            } elseif (\preg_match('/^([A-Z0-9-]+)[;:]/i', $line, $parts) === 1) {
+                $name = \strtoupper($parts[1]);
+            } else {
                 continue;
             }
 
             $parent = $stack[\array_key_last($stack)];
             $id = \spl_object_id($parent);
-            $name = \strtoupper($boundary ? \substr($line, 6) : $parts[1]);
             $position = $positions[$id][$name] ?? 0;
             $child = $parent->select($name)[$position] ?? null;
 
@@ -555,7 +585,13 @@ final readonly class CalendarHydrator
      */
     private function firstHydratedProperty(array $properties, string $name): ?Property
     {
-        return $this->hydratedProperties($properties, $name)[0] ?? null;
+        foreach ($properties as $property) {
+            if ($property->name === $name) {
+                return $property;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -10,13 +10,13 @@ use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VTodo;
 
-/** Represent an immutable typed view of one VTODO component. */
+/** Represent an readonly typed view of one VTODO component. */
 final readonly class Todo
 {
     use QueriesProperties;
 
     /**
-     * Hydrate an immutable todo snapshot.
+     * Hydrate a readonly todo snapshot.
      *
      * @param  list<Property>  $propertyItems
      *
@@ -88,7 +88,10 @@ final readonly class Todo
     /** Return a deep clone of the underlying low-level todo component. */
     public function rawComponent(): VTodo
     {
-        return clone $this->component;
+        $copy = clone $this->component;
+        $copy->parent = null;
+
+        return $copy;
     }
 
     /**

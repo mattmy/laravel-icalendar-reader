@@ -39,10 +39,10 @@ final readonly class AlarmTrigger
         return $this->relativeDuration === null ? null : clone $this->relativeDuration;
     }
 
-    /** Return the absolute trigger date-time. */
+    /** Return a defensive copy of the absolute trigger date-time and its settings. */
     public function dateTime(): ?CarbonImmutable
     {
-        return $this->absoluteDateTime;
+        return $this->absoluteDateTime === null ? null : clone $this->absoluteDateTime;
     }
 
     /** Return START or END for a relative trigger. */

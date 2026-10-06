@@ -104,7 +104,7 @@ components；`occurrencesBetween()` 會展開有界的 VEVENT recurrence，包�
 `RDATE;VALUE=PERIOD` 的 explicit duration，並套用 3,500 candidates 的工作上限。
 
 Calendar 內相符的 `VTIMEZONE` 定義優先於 host tzdata。Alarm object 提供 attachments、
-直接 properties、extension data 與防禦性複製的 raw component。
+直接 properties、extension data 與 raw component。
 Journal 保留重複 descriptions 與 recurrence 資料，但不提供 alarm、範圍查詢或
 recurrence expansion API。
 
@@ -123,8 +123,9 @@ try {
 ```
 
 `issues()` 說明內容遭拒絕的原因；`warnings()` 回報成功讀取後仍需留意的內容或設定。
-除了 Sabre validation，套件也驗證 temporal、alarm、date-time、INTEGER 與 PERIOD
-規則；目前 API 只接受恰好一個 VCALENDAR object。
+除了 Sabre validation，套件也驗證 temporal、alarm、date-time、INTEGER、BOOLEAN／FLOAT、
+PERIOD 與基本 RRULE 規則；目前 API 只接受恰好一個 VCALENDAR object。
+非法原始值在 hydration 前拒絕；合法但不能展開的規則仍適用 `UnsupportedRecurrence`。
 
 ## 效能與安全
 
