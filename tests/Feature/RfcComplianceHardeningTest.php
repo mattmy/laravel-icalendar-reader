@@ -19,6 +19,62 @@ function observanceCalendar(string $observances, string $target, string $eventPr
         . $eventProperties . "END:VEVENT\nEND:VCALENDAR\n");
 }
 
+it('leaves dates unresolved when an unsupported observance rule may affect them', function (string $kind, string $rule) {
+    $observances = "BEGIN:{$kind}\nDTSTART:20260101T000000\nRRULE:{$rule}\n"
+        . "TZOFFSETFROM:+0800\nTZOFFSETTO:+0900\nEND:{$kind}\n"
+        . "BEGIN:STANDARD\nDTSTART:20260102T000000\nTZOFFSETFROM:+0900\nTZOFFSETTO:+1000\nEND:STANDARD\n";
+    $calendar = observanceCalendar($observances, '20260103T120000', "RRULE:FREQ=DAILY;COUNT=2\n");
+    $event = $calendar->events()->sole();
+    $before = [$calendar->toJson(), $calendar->rawComponent()->serialize()];
+
+    expect($event->startsAt)->toBeNull()
+        ->and($event->property('DTSTART')?->value)->toBe('20260103T120000')
+        ->and($calendar->warnings()->where('code', 'mapping_warning')->where('property', 'DTSTART'))->not->toBeEmpty()
+        ->and(ICalendar::tryRead($calendar->rawComponent()->serialize()))->not->toBeNull()
+        ->and(fn () => $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01 UTC'), CarbonImmutable::parse('2026-02-01 UTC')))
+        ->toThrow(UnsupportedRecurrence::class)
+        ->and([$calendar->toJson(), $calendar->rawComponent()->serialize()])->toBe($before);
+
+    $earlier = observanceCalendar($observances, '20251231T120000');
+    expect($earlier->events()->sole()->startsAt?->format('P'))->toBe('+08:00')
+        ->and($earlier->warnings()->where('code', 'mapping_warning'))->toBeEmpty();
+})->with(['STANDARD', 'DAYLIGHT'])->with([
+    'daily monthday' => 'FREQ=DAILY;COUNT=3;BYMONTHDAY=1',
+    'monthly hours' => 'FREQ=MONTHLY;COUNT=3;BYHOUR=0,12',
+    'yearly weekday' => 'FREQ=YEARLY;COUNT=3;BYDAY=TH',
+    'extension' => 'FREQ=DAILY;COUNT=3;RSCALE=GREGORIAN',
+]);
+
+it('preserves a supported start when an unsupported observance affects only the duration endpoint', function (string $duration, string $kind) {
+    $observances = "BEGIN:STANDARD\nDTSTART:20000101T000000\nTZOFFSETFROM:+0800\nTZOFFSETTO:+0800\nEND:STANDARD\n"
+        . "BEGIN:{$kind}\nDTSTART:20260102T000000\nRRULE:FREQ=DAILY;BYMONTHDAY=2\n"
+        . "TZOFFSETFROM:+0800\nTZOFFSETTO:+0900\nEND:{$kind}\n";
+    $calendar = observanceCalendar($observances, '20260101T120000', "DURATION:{$duration}\nRRULE:FREQ=DAILY;COUNT=2\n");
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+08:00')
+        ->and($calendar->events()->sole()->endsAt)->toBeNull()
+        ->and($calendar->warnings()->where('code', 'mapping_warning')->where('property', 'DURATION'))->toHaveCount(1)
+        ->and(fn () => $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01 UTC'), CarbonImmutable::parse('2026-01-04 UTC')))
+        ->toThrow(UnsupportedRecurrence::class);
+})->with(['P1D', 'PT24H'])->with(['STANDARD', 'DAYLIGHT']);
+
+it('uses proven observance frequency combinations without replacing calendar rules', function (string $rule, string $target, string $kind) {
+    $observances = "BEGIN:{$kind}\nDTSTART:20260101T000000\nRRULE:{$rule}\n"
+        . "TZOFFSETFROM:+0800\nTZOFFSETTO:+0900\nEND:{$kind}\n"
+        . "BEGIN:STANDARD\nDTSTART:20260102T010000\nTZOFFSETFROM:+0900\nTZOFFSETTO:+1000\nEND:STANDARD\n";
+    $calendar = observanceCalendar($observances, $target);
+
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+09:00')
+        ->and($calendar->warnings()->where('code', 'mapping_warning'))->toBeEmpty()
+        ->and($calendar->component('VTIMEZONE')?->components($kind)->first()?->property('RRULE')?->rawValue())->toBe($rule);
+})->with([
+    ['FREQ=HOURLY;INTERVAL=24;COUNT=3', '20260103T120000'],
+    ['FREQ=DAILY;BYDAY=TH,SA;BYMONTH=1;BYHOUR=0,12;COUNT=4', '20260103T130000'],
+    ['FREQ=WEEKLY;WKST=SU;BYDAY=TH;BYHOUR=0,12;COUNT=4', '20260108T130000'],
+    ['FREQ=MONTHLY;BYDAY=TH;BYMONTHDAY=1,2,3,4,5,6,7;BYSETPOS=1;COUNT=3', '20260206T120000'],
+    ['FREQ=YEARLY;BYMONTH=1;BYDAY=TH;BYMONTHDAY=1,2,3,4,5,6,7;BYSETPOS=1;COUNT=3', '20270108T120000'],
+])->with(['STANDARD', 'DAYLIGHT']);
+
 it('maps padded observance month tokens without changing the original rule', function () {
     $calendar = observanceCalendar("BEGIN:STANDARD\nDTSTART:20260101T000000\n"
         . "RRULE:FREQ=YEARLY;BYMONTH=01,2\nTZOFFSETFROM:+1000\nTZOFFSETTO:+0900\nEND:STANDARD\n"
