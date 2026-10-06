@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [Unreleased]
+
+## [0.7.0] - 2026-10-06
+
+### Fixed
+
+- Keep changes to a query result from affecting other results or later calendar output,
+  including nested collections, properties, durations, and alarm dates.
+- Keep dates aligned with the calendar's own timezone rules, even when the system timezone
+  would move them across a daylight saving gap.
+- Calculate event and task durations correctly across daylight saving changes, including
+  recurring events and RDATE entries with their own duration.
+- Throw `UnresolvableEventRange` when a range query needs an event's end date but cannot
+  resolve it. This also applies to one-time events in `occurrencesBetween()`.
+  Recurring events continue to use `UnsupportedRecurrence` when required dates cannot be resolved.
+- Apply UTC UNTIL cutoffs correctly in timezone rules, including the transition at the cutoff.
+- Reject invalid UTC offsets, BOOLEAN/FLOAT values, and recurrence rules while reading the
+  calendar. Malformed recurrence values now raise `InvalidCalendar`, so the matching
+  `try*()` methods return `null` as expected.
+- Preserve BOOLEAN values and FLOAT precision when exporting generic properties and components.
+- Reject UTC dates that also specify TZID, including values inside date lists and PERIOD entries.
+- Ignore BYHOUR for all-day recurrence rules and handle leading zeros in supported BYHOUR
+  and BYMONTH values correctly, without changing the original rules.
+
+### Changed
+
+- Reuse the event already loaded when processing RDATE entries and avoid unnecessary
+  allocations when reading original property values.
+- Check both production code and tests at PHPStan/Larastan `max`. PHP 8.2 remains supported.
+
 ## [0.6.0] - 2026-10-01
 
 ### Fixed
@@ -99,4 +129,5 @@ All notable changes to this project are documented here. The format follows Keep
 [0.4.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.4.0
 [0.5.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.5.0
 [0.6.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.6.0
-[Unreleased]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.5.0...HEAD
+[0.7.0]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.6.0...v0.7.0
+[Unreleased]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.7.0...HEAD

@@ -9,13 +9,13 @@ use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VJournal;
 
-/** Represent an immutable typed view of one VJOURNAL component. */
+/** Represent an readonly typed view of one VJOURNAL component. */
 final readonly class Journal
 {
     use QueriesProperties;
 
     /**
-     * Hydrate an immutable journal snapshot.
+     * Hydrate a readonly journal snapshot.
      *
      * @param  list<Property>  $propertyItems
      *
@@ -70,7 +70,10 @@ final readonly class Journal
     /** Return a deep clone of the underlying low-level journal component. */
     public function rawComponent(): VJournal
     {
-        return clone $this->component;
+        $copy = clone $this->component;
+        $copy->parent = null;
+
+        return $copy;
     }
 
     /**

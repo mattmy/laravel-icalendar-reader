@@ -51,4 +51,41 @@ foreach ([1, 100, 1000] as $eventCount) {
         $elapsedMilliseconds,
         \memory_get_peak_usage(true) / 1024 / 1024,
     );
+
+    foreach (['single', 'filtered', 'all'] as $query) {
+        \memory_reset_peak_usage();
+        $before = \memory_get_usage();
+        $startedAt = \hrtime(true);
+        $result = match ($query) {
+            'single' => $calendar->event('benchmark-1@example.test'),
+            'filtered' => $calendar->events('benchmark-1@example.test'),
+            'all' => $calendar->events(),
+        };
+
+        \printf(
+            "  %s query: %.2f ms, %.2f MiB additional peak memory\n",
+            $query,
+            (\hrtime(true) - $startedAt) / 1_000_000,
+            (\memory_get_peak_usage() - $before) / 1024 / 1024,
+        );
+        unset($result);
+    }
+}
+
+foreach ([50, 100, 200] as $depth) {
+    $calendar = $reader->read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Mattmy//Benchmark//EN\r\n"
+        . \str_repeat("BEGIN:X-NEST\r\nX-SPAN;VALUE=DURATION:PT1H\r\n", $depth)
+        . \str_repeat("END:X-NEST\r\n", $depth) . "END:VCALENDAR\r\n");
+    \memory_reset_peak_usage();
+    $before = \memory_get_usage();
+    $startedAt = \hrtime(true);
+    $result = $calendar->component('X-NEST');
+
+    \printf(
+        "nested query depth %d: %.2f ms, %.2f MiB additional peak memory\n",
+        $depth,
+        (\hrtime(true) - $startedAt) / 1_000_000,
+        (\memory_get_peak_usage() - $before) / 1024 / 1024,
+    );
+    unset($result);
 }

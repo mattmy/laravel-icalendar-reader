@@ -9,7 +9,7 @@ use InvalidArgumentException;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component as SabreComponent;
 
-/** Represent an immutable generic view of an untyped iCalendar component. */
+/** Represent an readonly generic view of an untyped iCalendar component. */
 final readonly class Component
 {
     use QueriesProperties;
@@ -42,7 +42,7 @@ final readonly class Component
             return collect($this->componentItems);
         }
 
-        $name = self::normalizeName($name, 'Component');
+        $name = self::normalizeName($name);
 
         return collect($this->componentItems)
             ->filter(static fn (self $component): bool => $component->name === $name)
@@ -52,7 +52,10 @@ final readonly class Component
     /** Return a deep clone of the underlying low-level component. */
     public function rawComponent(): SabreComponent
     {
-        return clone $this->component;
+        $copy = clone $this->component;
+        $copy->parent = null;
+
+        return $copy;
     }
 
     /**
@@ -68,16 +71,16 @@ final readonly class Component
     }
 
     /**
-     * Normalize and validate an iCalendar property or component name.
+     * Normalize and validate an iCalendar component name.
      *
      * @throws InvalidArgumentException
      */
-    private static function normalizeName(string $name, string $kind): string
+    private static function normalizeName(string $name): string
     {
         $name = \trim($name);
 
         if ($name === '') {
-            throw new InvalidArgumentException("{$kind} names must not be empty.");
+            throw new InvalidArgumentException('Component names must not be empty.');
         }
 
         return \strtoupper($name);

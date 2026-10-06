@@ -10,6 +10,7 @@ use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Alarm;
 use Mattmy\ICalendar\Attendee;
 use Mattmy\ICalendar\Calendar;
+use Mattmy\ICalendar\CalendarIssue;
 use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Journal;
@@ -56,7 +57,7 @@ final class CalendarSerializer
             'events' => \array_values($calendar->events()->map(fn (Event $event): array => $this->event($event))->all()),
             'todos' => \array_values($calendar->todos()->map(fn (Todo $todo): array => $this->todo($todo))->all()),
             'journals' => \array_values($calendar->journals()->map(fn (Journal $journal): array => $this->journal($journal))->all()),
-            'warnings' => \array_values($calendar->warnings()->map(static fn ($issue): array => $issue->toArray())->all()),
+            'warnings' => \array_values($calendar->warnings()->map(static fn (CalendarIssue $issue): array => $issue->toArray())->all()),
         ];
     }
 
@@ -69,7 +70,7 @@ final class CalendarSerializer
     {
         return [
             'name' => 'VCALENDAR',
-            'properties' => \array_values($calendar->properties()->map(static fn (Property $property): array => $property->toArray())->all()),
+            'properties' => $this->properties($calendar->properties()),
             'components' => \array_values($calendar->components()->map(fn (Component $component): array => $this->component($component))->all()),
         ];
     }
@@ -251,7 +252,7 @@ final class CalendarSerializer
     {
         return [
             'name' => $component->name,
-            'properties' => \array_values($component->properties()->map(static fn (Property $property): array => $property->toArray())->all()),
+            'properties' => $this->properties($component->properties()),
             'components' => \array_values($component->components()->map(fn (Component $child): array => $this->component($child))->all()),
         ];
     }

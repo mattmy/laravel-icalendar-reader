@@ -12,6 +12,7 @@ use Mattmy\ICalendar\Exceptions\InvalidCalendar;
 use Mattmy\ICalendar\Exceptions\InvalidCalendarSource;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Reader;
+use PHPUnit\Framework\Assert;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 
@@ -39,6 +40,7 @@ it('enforces the actual byte limit for every supported input source', function (
         'upload' => fn () => $reader->fromUploadedFile(
             new UploadedFile($path, 'calendar.ics', 'text/calendar', null, true),
         ),
+        default => throw new LogicException('Unknown test source.'),
     };
 
     expect($call)->toThrow(CalendarTooLarge::class);
@@ -83,6 +85,7 @@ it('keeps throwing and nullable APIs symmetric for invalid calendar contents', f
                 fn () => $reader->fromUploadedFile(new UploadedFile($path, 'invalid.ics', null, null, true)),
                 fn () => $reader->tryFromUploadedFile(new UploadedFile($path, 'invalid.ics', null, null, true)),
             ],
+            default => throw new LogicException('Unknown test source.'),
         };
 
         expect($throwing)->toThrow(InvalidCalendar::class)
@@ -176,10 +179,10 @@ it('isolates raw child component clones from hydrated and subsequent raw data', 
     $calendar = ICalendar::read(calendarFixture('basic-event'));
     $event = $calendar->events()->sole();
     $rawEvent = $event->rawComponent();
-    $rawEvent->SUMMARY = 'Changed';
+    $rawEvent->__set('SUMMARY', 'Changed');
 
-    expect($event->summary)->toBe('Architecture review')
-        ->and((string) $event->rawComponent()->SUMMARY)->toBe('Architecture review');
+    expect($event->summary)->toBe('Architecture review');
+    expect(calendarRawProperty($event->rawComponent(), 'SUMMARY'))->toBe('Architecture review');
 });
 
 it('keeps calendar and issue serialization contracts stable', function () {
@@ -187,11 +190,10 @@ it('keeps calendar and issue serialization contracts stable', function () {
     $issue = new CalendarIssue(CalendarIssue::LEVEL_WARNING, 'mapping_warning', 'Example', 'mapping', 12, 'VEVENT', 'DTSTART');
 
     expect(CalendarIssue::LEVEL_WARNING)->toBe(2)
-        ->and(CalendarIssue::LEVEL_ERROR)->toBe(3)
-        ->and($calendar->jsonSerialize())->toBe($calendar->toArray())
-        ->and(\json_decode($calendar->toJson(\JSON_PRETTY_PRINT), true, flags: \JSON_THROW_ON_ERROR))
-        ->toBe($calendar->toArray())
-        ->and($issue->jsonSerialize())->toBe($issue->toArray())
+        ->and(CalendarIssue::LEVEL_ERROR)->toBe(3);
+    Assert::assertSame($calendar->toArray(), $calendar->jsonSerialize());
+    Assert::assertSame($calendar->toArray(), \json_decode($calendar->toJson(\JSON_PRETTY_PRINT), true, flags: \JSON_THROW_ON_ERROR));
+    expect($issue->jsonSerialize())->toBe($issue->toArray())
         ->and(\json_encode($issue, \JSON_THROW_ON_ERROR))->toBe(\json_encode($issue->toArray(), \JSON_THROW_ON_ERROR));
 
     $invalidUtf8 = new Calendar(

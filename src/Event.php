@@ -10,13 +10,13 @@ use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Sabre\VObject\Component\VEvent;
 
-/** Represent an immutable typed view of one VEVENT component. */
+/** Represent an readonly typed view of one VEVENT component. */
 final readonly class Event
 {
     use QueriesProperties;
 
     /**
-     * Hydrate an immutable event snapshot.
+     * Hydrate a readonly event snapshot.
      *
      * @param  list<Property>  $propertyItems
      *
@@ -101,7 +101,10 @@ final readonly class Event
      */
     public function rawComponent(): VEvent
     {
-        return clone $this->component;
+        $copy = clone $this->component;
+        $copy->parent = null;
+
+        return $copy;
     }
 
     /**

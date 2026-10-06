@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sabre\VObject;
+
+class Reader
+{
+    /**
+     * Include recurrence value failures propagated by the MIME directory parser.
+     *
+     * @param string|resource $data
+     *
+     * @throws ParseException|InvalidDataException
+     */
+    public static function read($data, int $options = 0, string $charset = 'UTF-8'): ?Document
+    {
+    }
+}
+
+// Referenced types need shells for PHPStan's isolated stub validation.
+abstract class Document {}
+
+class ParseException extends \Exception {}
+
+class InvalidDataException extends \Exception {}

@@ -10,19 +10,23 @@ use Mattmy\ICalendar\Property;
 it('documents every package class and declared method', function () {
     $source = \realpath(__DIR__ . '/../../src');
 
-    expect($source)->not->toBeFalse();
+    if ($source === false) {
+        throw new RuntimeException('Package sources are missing.');
+    }
 
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source));
 
     foreach ($files as $file) {
-        if (! $file->isFile() || $file->getExtension() !== 'php') {
+        if (! $file instanceof SplFileInfo || ! $file->isFile() || $file->getExtension() !== 'php') {
             continue;
         }
 
         $relative = \substr($file->getPathname(), \strlen($source) + 1, -4);
         $class = 'Mattmy\\ICalendar\\' . \str_replace(\DIRECTORY_SEPARATOR, '\\', $relative);
 
-        expect(\class_exists($class) || \interface_exists($class) || \trait_exists($class))->toBeTrue();
+        if (! \class_exists($class) && ! \interface_exists($class) && ! \trait_exists($class)) {
+            throw new RuntimeException("Missing package symbol: {$class}");
+        }
 
         $reflection = new ReflectionClass($class);
 

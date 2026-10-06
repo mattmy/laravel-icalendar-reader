@@ -2,8 +2,40 @@
 
 declare(strict_types=1);
 
+use Mattmy\ICalendar\Component;
 use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Property;
+use Mattmy\ICalendar\Support\ParserValue;
+
+it('preserves scalar parser values in property and component exports', function (string $type, string $raw, bool|int|float $expected) {
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Scalar Values//EN\n"
+        . "X-SCALAR;VALUE={$type}:{$raw}\nBEGIN:VEVENT\nUID:scalar\nDTSTAMP:20260804T000000Z\n"
+        . "DTSTART:20260804T010000Z\nX-SCALAR;VALUE={$type}:{$raw}\nEND:VEVENT\nEND:VCALENDAR\n");
+
+    foreach ([$calendar, $calendar->events()->sole(), $calendar->components('VEVENT')->sole()] as $snapshot) {
+        expect($snapshot->property('X-SCALAR')?->value)->toBe($expected)
+            ->and($snapshot->property('X-SCALAR')?->values)->toBe([$expected]);
+    }
+
+    $tree = $calendar->toComponentArray();
+    foreach ([$tree, $tree['components'][0]] as $component) {
+        expect(collect(normalizedComponentProperties($component))->firstWhere('name', 'X-SCALAR')['value'] ?? null)->toBe($expected);
+    }
+})->with([
+    'true' => ['BOOLEAN', 'TRUE', true],
+    'false' => ['BOOLEAN', 'FALSE', false],
+    'case-insensitive true' => ['BOOLEAN', 'true', true],
+    'float precision' => ['FLOAT', '0.1234567890123456', 0.1234567890123456],
+    'integer' => ['INTEGER', '2147483647', 2147483647],
+]);
+
+it('narrows parser text without coercing structured values', function () {
+    expect(ParserValue::text(null))->toBe('');
+    expect(ParserValue::text(12))->toBe('12');
+    expect(ParserValue::text('raw'))->toBe('raw');
+    expect(fn () => ParserValue::text([]))->toThrow(LogicException::class);
+    expect(fn () => ParserValue::text(new stdClass()))->toThrow(LogicException::class);
+});
 
 it('preserves interleaved direct property order in typed generic and serialized views', function () {
     $calendar = ICalendar::read(<<<'ICS'
@@ -34,7 +66,7 @@ ICS);
     $tree = $calendar->toComponentArray();
 
     foreach ([$tree, $tree['components'][0]] as $component) {
-        $properties = collect($component['properties'])->filter(static fn (array $property): bool => \str_starts_with($property['name'], 'X-'));
+        $properties = collect(normalizedComponentProperties($component))->filter(static fn (array $property): bool => \str_starts_with($property['name'], 'X-'));
 
         expect($properties->pluck('name')->values()->all())->toBe(['X-A', 'X-B', 'X-A'])
             ->and($properties->pluck('value')->values()->all())->toBe(['first', 'middle', 'last']);
@@ -147,7 +179,8 @@ it('supports presence queries without recursing into child components', function
         ->and($calendar->hasComponent())->toBeTrue()
         ->and($calendar->hasComponent('vfreebusy'))->toBeTrue()
         ->and($calendar->hasComponent('VALARM'))->toBeFalse()
-        ->and($calendar->component('vfreebusy'))->toBe($calendar->components()->first())
+        ->and($calendar->component('vfreebusy'))->toBeInstanceOf(Component::class)
+        ->and($calendar->component('vfreebusy')?->rawComponent()->serialize())->toBe($calendar->components()->first()?->rawComponent()->serialize())
         ->and($calendar->component('VTODO'))->toBeNull()
         ->and($calendar->components('VFREEBUSY')->sole()->hasProperty())->toBeTrue();
 });
@@ -178,8 +211,8 @@ it('exports a normalized component tree without collapsing repeated properties',
     $freeBusy = $tree['components'][0];
 
     expect($tree['name'])->toBe('VCALENDAR')
-        ->and($freeBusy['name'])->toBe('VFREEBUSY')
-        ->and(collect($freeBusy['properties'])->where('name', 'FREEBUSY'))->toHaveCount(3);
+        ->and($freeBusy['name'])->toBe('VFREEBUSY');
+    expect(collect(normalizedComponentProperties($freeBusy))->where('name', 'FREEBUSY'))->toHaveCount(3);
 });
 
 it('exports a property using the normalized shape shared by component trees', function () {
@@ -207,9 +240,33 @@ it('exports a property using the normalized shape shared by component trees', fu
 
     $calendar = ICalendar::read(calendarFixture('freebusy'));
     $property = $calendar->components('VFREEBUSY')->sole()->property('FREEBUSY');
-    $treeProperty = collect($calendar->toComponentArray()['components'][0]['properties'])
+    $treeProperty = collect(normalizedComponentProperties($calendar->toComponentArray()['components'][0]))
         ->firstWhere('name', 'FREEBUSY');
 
     expect($property)->not->toBeNull()
         ->and($property?->toArray())->toBe($treeProperty);
 });
+
+/**
+ * Narrow the normalized subtree used by the public export assertions.
+ *
+ * @param  array<string, mixed>  $component
+ * @return list<array{name: string, value: mixed}>
+ */
+function normalizedComponentProperties(array $component): array
+{
+    $properties = $component['properties'] ?? null;
+    if (! \is_array($properties) || ! \array_is_list($properties)) {
+        throw new RuntimeException('Expected ordered component properties.');
+    }
+    $result = [];
+    foreach ($properties as $property) {
+        if (! \is_array($property) || ! \is_string($property['name'] ?? null)
+            || ! \array_key_exists('value', $property)) {
+            throw new RuntimeException('Expected a normalized property.');
+        }
+        $result[] = $property;
+    }
+
+    return $result;
+}

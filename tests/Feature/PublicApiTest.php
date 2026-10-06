@@ -57,6 +57,9 @@ it('supports the documented quick-start event loop', function () {
 });
 
 it('keeps domain models final and readonly', function (string $class) {
+    if (! \class_exists($class)) {
+        throw new RuntimeException("Missing model: {$class}");
+    }
     $reflection = new ReflectionClass($class);
 
     expect($reflection->isFinal())->toBeTrue()

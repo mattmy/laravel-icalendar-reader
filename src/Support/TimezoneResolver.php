@@ -51,6 +51,8 @@ final readonly class TimezoneResolver
 
     /**
      * Determine whether a configuration value is an exact PHP IANA identifier.
+     *
+     * @phpstan-assert-if-true string $timezone
      */
     private function isIanaTimezone(mixed $timezone): bool
     {

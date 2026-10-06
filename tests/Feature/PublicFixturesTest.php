@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
 use Mattmy\ICalendar\Facades\ICalendar;
+use PHPUnit\Framework\Assert;
 
 /** Return the local path of a published interoperability fixture. */
 function publicFixturePath(string $name): string
@@ -100,17 +101,19 @@ it('maps VTODO fields and emits the fixed domain and normalized outputs', functi
         'start_is_floating', 'end_is_floating', 'is_all_day', 'last_day', 'duration',
         'timestamp', 'created_at', 'last_modified_at', 'status', 'classification',
         'priority', 'sequence', 'url', 'organizer', 'attendees', 'alarms', 'categories',
-    ])->not->toHaveKey('all_day')
-        ->and($output['todos'])->toBe([])
-        ->and(\json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR))
-        ->toBe($calendar->toArray());
+    ]);
+    expect($event)->not->toHaveKey('all_day')
+        ->and($output['todos'])->toBe([]);
+    Assert::assertSame($calendar->toArray(), \json_decode($calendar->toJson(), true, flags: \JSON_THROW_ON_ERROR));
 });
 
 it('reads every valid supplied public fixture without hiding non-event data', function () {
     foreach (\range(1, 6) as $number) {
         $path = (\glob(publicFixturePath(\sprintf('%02d-*', $number))) ?: [])[0] ?? null;
 
-        expect($path)->not->toBeNull();
+        if ($path === null) {
+            throw new RuntimeException('Public fixture is missing.');
+        }
 
         $calendar = ICalendar::fromPath($path);
 

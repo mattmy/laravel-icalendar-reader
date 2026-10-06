@@ -40,7 +40,15 @@ trait QueriesProperties
      */
     public function hasProperty(?string $name = null): bool
     {
-        return $this->properties($name)->isNotEmpty();
+        $name = $name === null ? null : self::normalizePropertyName($name);
+
+        foreach ($this->propertyItems() as $property) {
+            if ($name === null || $property->name === $name) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -50,7 +58,15 @@ trait QueriesProperties
      */
     public function property(string $name): ?Property
     {
-        return $this->properties($name)->first();
+        $name = self::normalizePropertyName($name);
+
+        foreach ($this->propertyItems() as $property) {
+            if ($property->name === $name) {
+                return $property;
+            }
+        }
+
+        return null;
     }
 
     /**

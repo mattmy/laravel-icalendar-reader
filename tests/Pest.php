@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Mattmy\ICalendar\Tests\TestCase;
+use Sabre\VObject\Component;
+use Sabre\VObject\Property;
 
 pest()->extend(TestCase::class)->in('Feature');
 
@@ -20,4 +22,15 @@ function calendarFixture(string $name): string
     }
 
     return $contents;
+}
+
+/** Read a raw property through Sabre's explicit selection API. */
+function calendarRawProperty(Component $component, string $name): string
+{
+    $property = $component->select($name)[0] ?? null;
+    if (! $property instanceof Property) {
+        throw new RuntimeException('Expected raw property is missing.');
+    }
+
+    return (string) $property;
 }

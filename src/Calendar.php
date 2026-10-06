@@ -12,25 +12,30 @@ use JsonException;
 use JsonSerializable;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
 use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
+use Mattmy\ICalendar\Exceptions\UnresolvableEventRange;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Support\CalendarSerializer;
 use Mattmy\ICalendar\Support\EventOccurrenceExpander;
 use Mattmy\ICalendar\Support\PropertyName;
+use Mattmy\ICalendar\Support\Snapshot;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 
 /**
- * Represent an immutable, queryable snapshot of one VCALENDAR document.
+ * Represent an queryable calendar with detached public snapshots.
  *
  * @phpstan-import-type ComponentArray from CalendarSerializer
  * @phpstan-import-type CalendarArray from CalendarSerializer
  */
 final readonly class Calendar implements JsonSerializable
 {
-    use QueriesProperties;
+    use QueriesProperties {
+        properties as private canonicalProperties;
+        property as private canonicalProperty;
+    }
 
     /**
-     * Hydrate an immutable calendar snapshot and its ordered child data.
+     * Hydrate canonical calendar data and its ordered child data.
      *
      * @param  list<Event>  $eventItems
      * @param  list<Todo>  $todoItems
@@ -61,6 +66,30 @@ final readonly class Calendar implements JsonSerializable
     ) {}
 
     /**
+     * Return detached direct properties, selecting before copying their values.
+     *
+     * @return Collection<int, Property>
+     *
+     * @throws InvalidArgumentException
+     */
+    public function properties(?string $name = null): Collection
+    {
+        return $this->canonicalProperties($name)->map(Snapshot::property(...));
+    }
+
+    /**
+     * Return the first detached direct property matching a case-insensitive name.
+     *
+     * @throws InvalidArgumentException
+     */
+    public function property(string $name): ?Property
+    {
+        $first = $this->canonicalProperty($name);
+
+        return $first === null ? null : Snapshot::property($first);
+    }
+
+    /**
      * Return events in document order, optionally filtered by exact UID.
      *
      * @return Collection<int, Event>
@@ -70,12 +99,13 @@ final readonly class Calendar implements JsonSerializable
         $events = collect($this->eventItems);
 
         if ($uid === null) {
-            return $events;
+            return $events->map(Snapshot::event(...));
         }
 
         return $events
             ->filter(static fn (Event $event): bool => $event->uid === $uid)
-            ->values();
+            ->values()
+            ->map(Snapshot::event(...));
     }
 
     /**
@@ -83,7 +113,13 @@ final readonly class Calendar implements JsonSerializable
      */
     public function hasEvents(?string $uid = null): bool
     {
-        return $this->events($uid)->isNotEmpty();
+        foreach ($this->eventItems as $event) {
+            if ($uid === null || $event->uid === $uid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -98,12 +134,12 @@ final readonly class Calendar implements JsonSerializable
                 $firstMatch ??= $event;
 
                 if (! $event->hasProperty(PropertyName::RECURRENCE_ID)) {
-                    return $event;
+                    return Snapshot::event($event);
                 }
             }
         }
 
-        return $firstMatch;
+        return $firstMatch === null ? null : Snapshot::event($firstMatch);
     }
 
     /**
@@ -116,18 +152,25 @@ final readonly class Calendar implements JsonSerializable
         $todos = collect($this->todoItems);
 
         if ($uid === null) {
-            return $todos;
+            return $todos->map(Snapshot::todo(...));
         }
 
         return $todos
             ->filter(static fn (Todo $todo): bool => $todo->uid === $uid)
-            ->values();
+            ->values()
+            ->map(Snapshot::todo(...));
     }
 
     /** Determine whether any todo, or an exact UID match, exists. */
     public function hasTodos(?string $uid = null): bool
     {
-        return $this->todos($uid)->isNotEmpty();
+        foreach ($this->todoItems as $todo) {
+            if ($uid === null || $todo->uid === $uid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Find a todo by its exact, case-sensitive UID. */
@@ -140,12 +183,12 @@ final readonly class Calendar implements JsonSerializable
                 $firstMatch ??= $todo;
 
                 if (! $todo->hasProperty(PropertyName::RECURRENCE_ID)) {
-                    return $todo;
+                    return Snapshot::todo($todo);
                 }
             }
         }
 
-        return $firstMatch;
+        return $firstMatch === null ? null : Snapshot::todo($firstMatch);
     }
 
     /**
@@ -158,18 +201,25 @@ final readonly class Calendar implements JsonSerializable
         $journals = collect($this->journalItems);
 
         if ($uid === null) {
-            return $journals;
+            return $journals->map(Snapshot::journal(...));
         }
 
         return $journals
             ->filter(static fn (Journal $journal): bool => $journal->uid === $uid)
-            ->values();
+            ->values()
+            ->map(Snapshot::journal(...));
     }
 
     /** Determine whether any journal, or an exact UID match, exists. */
     public function hasJournals(?string $uid = null): bool
     {
-        return $this->journals($uid)->isNotEmpty();
+        foreach ($this->journalItems as $journal) {
+            if ($uid === null || $journal->uid === $uid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Find a journal by its exact, case-sensitive UID. */
@@ -182,12 +232,12 @@ final readonly class Calendar implements JsonSerializable
                 $firstMatch ??= $journal;
 
                 if (! $journal->hasProperty(PropertyName::RECURRENCE_ID)) {
-                    return $journal;
+                    return Snapshot::journal($journal);
                 }
             }
         }
 
-        return $firstMatch;
+        return $firstMatch === null ? null : Snapshot::journal($firstMatch);
     }
 
     /**
@@ -196,6 +246,7 @@ final readonly class Calendar implements JsonSerializable
      * @return Collection<int, Event>
      *
      * @throws InvalidArgumentException
+     * @throws UnresolvableEventRange
      */
     public function eventsBetween(DateTimeInterface $from, DateTimeInterface $until): Collection
     {
@@ -214,13 +265,22 @@ final readonly class Calendar implements JsonSerializable
 
                 $start = $event->startsAt->getTimestamp();
 
-                if ($event->endsAt === null) {
-                    return $fromTimestamp <= $start && $start < $untilTimestamp;
+                if ($start >= $untilTimestamp) {
+                    return false;
                 }
 
-                return $start < $untilTimestamp && $event->endsAt->getTimestamp() > $fromTimestamp;
+                if ($event->endsAt === null) {
+                    if ($event->startIsDate || $event->hasProperty(PropertyName::DTEND) || $event->hasProperty(PropertyName::DURATION)) {
+                        throw new UnresolvableEventRange('An event endpoint required by the range query cannot be resolved safely.');
+                    }
+
+                    return $fromTimestamp <= $start;
+                }
+
+                return $event->endsAt->getTimestamp() > $fromTimestamp;
             })
-            ->values();
+            ->values()
+            ->map(Snapshot::event(...));
     }
 
     /**
@@ -230,6 +290,7 @@ final readonly class Calendar implements JsonSerializable
      *
      * @throws InvalidArgumentException
      * @throws RecurrenceLimitExceeded
+     * @throws UnresolvableEventRange
      * @throws UnsupportedRecurrence
      */
     public function occurrencesBetween(DateTimeInterface $from, DateTimeInterface $until): Collection
@@ -270,14 +331,15 @@ final readonly class Calendar implements JsonSerializable
     public function components(?string $name = null): Collection
     {
         if ($name === null) {
-            return collect($this->componentItems);
+            return collect($this->componentItems)->map(static fn (Component $component): Component => Snapshot::component($component));
         }
 
-        $name = $this->normalizeName($name, 'Component');
+        $name = $this->normalizeName($name);
 
         return collect($this->componentItems)
             ->filter(static fn (Component $component): bool => $component->name === $name)
-            ->values();
+            ->values()
+            ->map(static fn (Component $component): Component => Snapshot::component($component));
     }
 
     /**
@@ -287,7 +349,15 @@ final readonly class Calendar implements JsonSerializable
      */
     public function hasComponent(?string $name = null): bool
     {
-        return $this->components($name)->isNotEmpty();
+        $name = $name === null ? null : $this->normalizeName($name);
+
+        foreach ($this->componentItems as $component) {
+            if ($name === null || $component->name === $name) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -297,7 +367,15 @@ final readonly class Calendar implements JsonSerializable
      */
     public function component(string $name): ?Component
     {
-        return $this->components($name)->first();
+        $name = $this->normalizeName($name);
+
+        foreach ($this->componentItems as $component) {
+            if ($component->name === $name) {
+                return Snapshot::component($component);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -361,16 +439,16 @@ final readonly class Calendar implements JsonSerializable
     }
 
     /**
-     * Normalize and validate an iCalendar property or component name.
+     * Normalize and validate an iCalendar component name.
      *
      * @throws InvalidArgumentException
      */
-    private function normalizeName(string $name, string $kind): string
+    private function normalizeName(string $name): string
     {
         $name = \trim($name);
 
         if ($name === '') {
-            throw new InvalidArgumentException("{$kind} names must not be empty.");
+            throw new InvalidArgumentException('Component names must not be empty.');
         }
 
         return \strtoupper($name);

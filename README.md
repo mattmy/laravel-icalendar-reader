@@ -107,7 +107,7 @@ the event components present in the input; `occurrencesBetween()` expands bounde
 recurrence, including explicit `RDATE;VALUE=PERIOD` durations, with a 3,500-candidate work cap.
 
 Matching calendar `VTIMEZONE` definitions take precedence over host tzdata. Alarm objects
-expose attachments, direct properties, extension data, and defensive raw component clones.
+expose attachments, direct properties, extension data, and raw components.
 Journals preserve repeated descriptions and recurrence data, but do not provide alarm, range,
 or recurrence-expansion APIs.
 
@@ -127,7 +127,9 @@ try {
 
 `issues()` explains rejected content. `warnings()` reports readable content or configuration
 that needs attention. Validation includes package-level temporal, alarm, date-time, integer,
-and PERIOD rules in addition to Sabre validation; this API accepts exactly one VCALENDAR object.
+BOOLEAN/FLOAT, PERIOD, and basic RRULE rules in addition to Sabre validation; this API accepts
+exactly one VCALENDAR object. Invalid original values are rejected before hydration; valid rules
+that cannot be expanded remain subject to `UnsupportedRecurrence`.
 
 ## Performance and security
 
