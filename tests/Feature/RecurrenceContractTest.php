@@ -8,6 +8,91 @@ use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Facades\ICalendar;
 
+/** Build a valid series without coupling lexical validation to expansion support. */
+function capabilityCalendar(string $rule, string $start = 'DTSTART:20260101T090000Z', string $extra = ''): string
+{
+    return "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Capabilities//EN\n"
+        . "BEGIN:VEVENT\nUID:capability\nDTSTAMP:20260101T000000Z\n{$start}\nRRULE:{$rule}\nEND:VEVENT\n"
+        . $extra . "END:VCALENDAR\n";
+}
+
+it('rejects legal recurrence combinations that cannot be expanded safely', function (string $rule, string $start) {
+    $contents = capabilityCalendar(
+        $rule,
+        $start,
+        "BEGIN:VEVENT\nUID:ordinary\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T080000Z\nEND:VEVENT\n",
+    );
+    $calendar = ICalendar::read($contents);
+    $before = [$calendar->toJson(), $calendar->rawComponent()->serialize()];
+
+    expect(ICalendar::tryRead($contents))->not->toBeNull()
+        ->and($calendar->events()->first()?->recurrenceRule?->rawValue())->toBe($rule)
+        ->and(fn () => $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01 UTC'), CarbonImmutable::parse('2029-01-01 UTC')))
+        ->toThrow(UnsupportedRecurrence::class)
+        ->and([$calendar->toJson(), $calendar->rawComponent()->serialize()])->toBe($before);
+})->with([
+    'D5 daily monthday' => ['FREQ=DAILY;COUNT=3;BYMONTHDAY=10', 'DTSTART:20260110T090000Z'],
+    'D5 monthly hours' => ['FREQ=MONTHLY;COUNT=3;BYHOUR=10,12', 'DTSTART:20260101T100000Z'],
+    'D5 yearly weekday' => ['FREQ=YEARLY;COUNT=3;BYDAY=MO', 'DTSTART:20260105T090000Z'],
+    'hourly month' => ['FREQ=HOURLY;COUNT=3;BYMONTH=1', 'DTSTART:20260101T090000Z'],
+    'hourly weekday' => ['FREQ=HOURLY;COUNT=3;BYDAY=TH', 'DTSTART:20260101T090000Z'],
+    'hourly monthday' => ['FREQ=HOURLY;COUNT=3;BYMONTHDAY=1', 'DTSTART:20260101T090000Z'],
+    'hourly yearday' => ['FREQ=HOURLY;COUNT=3;BYYEARDAY=1', 'DTSTART:20260101T090000Z'],
+    'hourly hours' => ['FREQ=HOURLY;COUNT=3;BYHOUR=9', 'DTSTART:20260101T090000Z'],
+    'hourly setpos' => ['FREQ=HOURLY;COUNT=3;BYHOUR=9;BYSETPOS=1', 'DTSTART:20260101T090000Z'],
+    'hourly DATE' => ['FREQ=HOURLY;COUNT=3', 'DTSTART;VALUE=DATE:20260101'],
+    'daily month alone' => ['FREQ=DAILY;COUNT=3;BYMONTH=1', 'DTSTART:20260101T090000Z'],
+    'daily setpos' => ['FREQ=DAILY;COUNT=3;BYHOUR=9,12;BYSETPOS=1', 'DTSTART:20260101T090000Z'],
+    'weekly month' => ['FREQ=WEEKLY;COUNT=3;BYDAY=TH;BYMONTH=1', 'DTSTART:20260101T090000Z'],
+    'weekly hours alone' => ['FREQ=WEEKLY;COUNT=3;BYHOUR=9,12', 'DTSTART:20260101T090000Z'],
+    'weekly setpos' => ['FREQ=WEEKLY;COUNT=3;BYDAY=TH;BYSETPOS=1', 'DTSTART:20260101T090000Z'],
+    'monthly month' => ['FREQ=MONTHLY;COUNT=3;BYMONTH=1', 'DTSTART:20260101T090000Z'],
+    'monthly DATE ignored hours positions' => ['FREQ=MONTHLY;COUNT=3;BYHOUR=9,12;BYSETPOS=2', 'DTSTART;VALUE=DATE:20260101'],
+    'monthly inclusive until selector' => ['FREQ=MONTHLY;BYDAY=1TH;UNTIL=20260201T090000Z', 'DTSTART:20260101T090000Z'],
+    'monthly padded intersection' => ['FREQ=MONTHLY;COUNT=3;BYDAY=TH;BYMONTHDAY=01,08', 'DTSTART:20260101T090000Z'],
+    'monthly signed intersection' => ['FREQ=MONTHLY;COUNT=3;BYDAY=TH;BYMONTHDAY=+1,+8', 'DTSTART:20260101T090000Z'],
+    'monthly padded ordinal' => ['FREQ=MONTHLY;COUNT=3;BYDAY=01TH', 'DTSTART:20260101T090000Z'],
+    'yearly hours' => ['FREQ=YEARLY;COUNT=3;BYHOUR=9,12', 'DTSTART:20260101T090000Z'],
+    'yearly monthday alone' => ['FREQ=YEARLY;COUNT=3;BYMONTHDAY=1', 'DTSTART:20260101T090000Z'],
+    'yearly yearday' => ['FREQ=YEARLY;COUNT=3;BYYEARDAY=1', 'DTSTART:20260101T090000Z'],
+    'yearly week number' => ['FREQ=YEARLY;COUNT=3;BYWEEKNO=1;BYDAY=TH', 'DTSTART:20260101T090000Z'],
+    'yearly positions across months' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1,2;BYDAY=MO;BYSETPOS=1', 'DTSTART:20260105T090000Z'],
+    'yearly positions without day selector' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1;BYSETPOS=2', 'DTSTART:20260101T090000Z'],
+    'yearly implicit missing day' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1,2', 'DTSTART:20260131T090000Z'],
+    'yearly padded intersection' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1;BYDAY=TH;BYMONTHDAY=01,08', 'DTSTART:20260101T090000Z'],
+    'unknown extension' => ['FREQ=DAILY;COUNT=3;RSCALE=GREGORIAN', 'DTSTART:20260101T090000Z'],
+]);
+
+it('expands the proven frequency and combination branches', function (string $rule, string $start, array $expected) {
+    $calendar = ICalendar::read(capabilityCalendar($rule, $start));
+    $before = $calendar->rawComponent()->serialize();
+    $dates = $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01 UTC'), CarbonImmutable::parse('2035-01-01 UTC'))
+        ->map(static fn (Event $event): ?string => $event->startsAt?->format('Y-m-d H:i'))->all();
+
+    expect($dates)->toBe($expected)
+        ->and($calendar->rawComponent()->serialize())->toBe($before);
+})->with([
+    'hourly interval count' => ['FREQ=HOURLY;INTERVAL=2;COUNT=3', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-01 11:00', '2026-01-01 13:00']],
+    'daily interval until' => ['FREQ=DAILY;INTERVAL=2;UNTIL=20260105T090000Z', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-03 09:00', '2026-01-05 09:00']],
+    'daily joint filters' => ['FREQ=DAILY;INTERVAL=2;COUNT=4;BYMONTH=1;BYDAY=TH,SA;BYHOUR=9,12', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-01 12:00', '2026-01-03 09:00', '2026-01-03 12:00']],
+    'daily month weekday' => ['FREQ=DAILY;COUNT=3;BYMONTH=1;BYDAY=TH', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-08 09:00', '2026-01-15 09:00']],
+    'daily month hour' => ['FREQ=DAILY;COUNT=3;BYMONTH=1;BYHOUR=9,12', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-01 12:00', '2026-01-02 09:00']],
+    'weekly default day' => ['FREQ=WEEKLY;INTERVAL=2;COUNT=3;WKST=SU', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-15 09:00', '2026-01-29 09:00']],
+    'weekly interval week start hours' => ['FREQ=WEEKLY;INTERVAL=2;COUNT=5;WKST=SU;BYDAY=TH,SU;BYHOUR=9,12', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-01 12:00', '2026-01-11 09:00', '2026-01-11 12:00', '2026-01-15 09:00']],
+    'monthly default day' => ['FREQ=MONTHLY;INTERVAL=2;COUNT=3', 'DTSTART:20260131T090000Z', ['2026-01-31 09:00', '2026-03-31 09:00', '2026-05-31 09:00']],
+    'monthly ordinal day' => ['FREQ=MONTHLY;COUNT=3;BYDAY=1TH', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-02-05 09:00', '2026-03-05 09:00']],
+    'monthly joint set positions' => ['FREQ=MONTHLY;COUNT=3;BYDAY=MO,TU,WE,TH,FR;BYMONTHDAY=1,2,3,4,5,6,7;BYSETPOS=1,-1', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-07 09:00', '2026-02-02 09:00']],
+    'monthly negative days' => ['FREQ=MONTHLY;COUNT=3;BYMONTHDAY=-1', 'DTSTART:20260131T090000Z', ['2026-01-31 09:00', '2026-02-28 09:00', '2026-03-31 09:00']],
+    'yearly default' => ['FREQ=YEARLY;INTERVAL=2;COUNT=3', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2028-01-01 09:00', '2030-01-01 09:00']],
+    'yearly leap day' => ['FREQ=YEARLY;COUNT=2', 'DTSTART:20280229T090000Z', ['2028-02-29 09:00', '2032-02-29 09:00']],
+    'monthly inclusive until default' => ['FREQ=MONTHLY;UNTIL=20260301T090000Z', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-02-01 09:00', '2026-03-01 09:00']],
+    'yearly multiple months ordinal' => ['FREQ=YEARLY;INTERVAL=2;COUNT=3;BYMONTH=1,2;BYDAY=1TH', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-02-05 09:00', '2028-01-06 09:00']],
+    'yearly single month setpos' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1;BYDAY=MO,TU,WE,TH,FR;BYMONTHDAY=1,2,3,4,5,6,7;BYSETPOS=1,-1', 'DTSTART:20260101T090000Z', ['2026-01-01 09:00', '2026-01-07 09:00', '2027-01-01 09:00']],
+    'yearly explicit missing days' => ['FREQ=YEARLY;COUNT=3;BYMONTH=1,2;BYMONTHDAY=31', 'DTSTART:20260131T090000Z', ['2026-01-31 09:00', '2027-01-31 09:00', '2028-01-31 09:00']],
+    'DATE ignored hours monthly' => ['FREQ=MONTHLY;COUNT=3;BYDAY=1TH;BYHOUR=9,12', 'DTSTART;VALUE=DATE:20260101', ['2026-01-01 00:00', '2026-02-05 00:00', '2026-03-05 00:00']],
+    'floating daily' => ['FREQ=DAILY;COUNT=3', 'DTSTART:20260101T090000', ['2026-01-01 09:00', '2026-01-02 09:00', '2026-01-03 09:00']],
+]);
+
 it('expands equivalent padded numeric recurrence parts without changing raw rules', function (string $rule, string $until, array $expected) {
     $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Padded Recurrence//EN\n"
         . "BEGIN:VEVENT\nUID:padded\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T090000Z\n"

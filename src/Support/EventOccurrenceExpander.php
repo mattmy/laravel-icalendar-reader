@@ -263,11 +263,10 @@ final class EventOccurrenceExpander
             throw new UnsupportedRecurrence('Multiple RRULE properties cannot be expanded safely.');
         }
 
-        $rule = $this->rawProperty($master['component'], PropertyName::RRULE)?->getParts() ?? [];
+        $rule = $this->rawProperty($master['component'], PropertyName::RRULE);
 
-        if (\in_array(\strtoupper(ParserValue::text($rule['FREQ'] ?? '')), ['SECONDLY', 'MINUTELY'], true)
-            || isset($rule['BYSECOND']) || isset($rule['BYMINUTE'])) {
-            throw new UnsupportedRecurrence('This recurrence frequency or time expansion is not supported safely.');
+        if ($rule !== null && ! ParserValue::supportsRecurrence($rule, $this->rawProperty($master['component'], PropertyName::DTSTART))) {
+            throw new UnsupportedRecurrence('This recurrence rule combination cannot be expanded safely.');
         }
 
         foreach ($events as $event) {

@@ -2,9 +2,25 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
-## [Unreleased]
+## [0.8.0] - 2026-10-06
+
+### Fixed
+
+- Reject valid RRULE combinations that Sabre cannot expand correctly with
+  `UnsupportedRecurrence`, instead of returning extra or missing occurrences. Reading
+  remains successful and preserves the rule. The entire occurrence query fails.
+- Use the same capability checks for calendar timezone rules. Dates that need an
+  unsupported observance remain unresolved with `mapping_warning` and their original value.
 
 ## [0.7.0] - 2026-10-06
+
+### Known issues
+
+- Some valid recurrence combinations can return incorrect results: DAILY with
+  BYMONTHDAY can add unwanted days, MONTHLY with BYHOUR can omit hours, and YEARLY
+  with BYDAY without BYMONTH can return dates on the wrong weekday. The same underlying
+  limitation can affect calendar timezone observances. The Unreleased correction
+  makes unsupported combinations fail explicitly; it is not part of the published 0.7.0 tag.
 
 ### Fixed
 
@@ -129,5 +145,5 @@ All notable changes to this project are documented here. The format follows Keep
 [0.4.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.4.0
 [0.5.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.5.0
 [0.6.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.6.0
-[0.7.0]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.6.0...v0.7.0
-[Unreleased]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.7.0
+[0.8.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.8.0

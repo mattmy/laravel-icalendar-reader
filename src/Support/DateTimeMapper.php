@@ -320,6 +320,10 @@ final class DateTimeMapper
                     continue;
                 }
 
+                if (! ParserValue::supportsRecurrence($rule, $startProperty)) {
+                    return null;
+                }
+
                 try {
                     $parts = ParserValue::recurrenceParts($rule);
                     $until = $parts['UNTIL'] ?? null;
@@ -360,7 +364,7 @@ final class DateTimeMapper
                         return null;
                     }
                 } catch (InvalidDataException) {
-                    continue;
+                    return null;
                 }
             }
 
