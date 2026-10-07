@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [0.8.1] - 2026-10-07
+
+### Fixed
+
+- Preserve GEO coordinate precision in typed events, tasks, and calendar array/JSON output.
+- Preserve the number of days in an all-day event's explicit start/end span when expanding
+  DATE RDATE entries, including dates in a different month.
+- Start DATE RDATE entries for date-time events at midnight in the calendar's floating timezone
+  and inherit the event's duration, instead of truncating occurrences to zero length.
+  Generated date-time properties and flags stay consistent, the original DATE values remain
+  unchanged, and events without an end or duration remain point events.
+
 ## [0.8.0] - 2026-10-06
 
 ### Fixed
@@ -139,6 +151,7 @@ All notable changes to this project are documented here. The format follows Keep
 - Complete PHPDoc contracts with an automated reflection guard.
 - Self-contained interoperability fixtures, bilingual guides, and a repeatable benchmark command.
 
+[0.8.1]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.8.1
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0
 [0.3.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.3.0

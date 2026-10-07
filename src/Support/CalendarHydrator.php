@@ -619,14 +619,14 @@ final readonly class CalendarHydrator
             return null;
         }
 
-        $parts = \explode(';', $property->rawValue());
+        $parts = $property->values;
 
-        if (\count($parts) !== 2 || ! \is_numeric($parts[0]) || ! \is_numeric($parts[1])) {
+        if (\count($parts) !== 2 || ! \is_float($parts[0]) || ! \is_float($parts[1])) {
             return null;
         }
 
-        $latitude = (float) $parts[0];
-        $longitude = (float) $parts[1];
+        $latitude = $parts[0];
+        $longitude = $parts[1];
 
         if (! \is_finite($latitude) || ! \is_finite($longitude)
             || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
