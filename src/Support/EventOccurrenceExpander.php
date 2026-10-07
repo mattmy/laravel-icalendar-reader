@@ -414,6 +414,12 @@ final class EventOccurrenceExpander
                     $date = clone $property;
                     $date->name = PropertyName::DTSTART;
                     $date->setValue($start);
+                    if ($property->getValueType() === 'DATE' && ! $masterEvent->startIsDate) {
+                        $midnight = (new DateTimeMapper())->value($date, $timezone->getName())
+                            ?? throw new UnsupportedRecurrence('An RDATE cannot be resolved safely.');
+                        $date->offsetUnset('VALUE');
+                        $date->setValue($midnight->format('Ymd\THis'));
+                    }
                     $component->remove(PropertyName::DTSTART);
                     $component->add($date);
                 } else {
@@ -431,10 +437,11 @@ final class EventOccurrenceExpander
                         $date = (new DateTimeMapper())->value($startProperty, $timezone->getName());
 
                         if ($date !== null && $startProperty instanceof DateTimeProperty) {
-                            if ($property->getValueType() === 'DATE') {
+                            if ($property->getValueType() === 'DATE' && $masterEvent->startIsDate) {
                                 $endDate = clone $startProperty;
                                 $endDate->name = PropertyName::DTEND;
-                                $endDate->setValue($date->add($masterEvent->startsAt->diff($masterEvent->endsAt))->format('Ymd'));
+                                $days = (int) $masterEvent->startsAt->diffInDays($masterEvent->endsAt);
+                                $endDate->setValue($date->addDays($days)->format('Ymd'));
                                 $component->add($endDate);
                             } else {
                                 $endDate = $date->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());

@@ -7,6 +7,8 @@ use Mattmy\ICalendar\Event;
 use Mattmy\ICalendar\Exceptions\RecurrenceLimitExceeded;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Facades\ICalendar;
+use PHPUnit\Framework\Assert;
+use Sabre\VObject\Property as SabreProperty;
 
 /** Build a valid series without coupling lexical validation to expansion support. */
 function capabilityCalendar(string $rule, string $start = 'DTSTART:20260101T090000Z', string $extra = ''): string
@@ -92,6 +94,140 @@ it('expands the proven frequency and combination branches', function (string $ru
     'DATE ignored hours monthly' => ['FREQ=MONTHLY;COUNT=3;BYDAY=1TH;BYHOUR=9,12', 'DTSTART;VALUE=DATE:20260101', ['2026-01-01 00:00', '2026-02-05 00:00', '2026-03-05 00:00']],
     'floating daily' => ['FREQ=DAILY;COUNT=3', 'DTSTART:20260101T090000', ['2026-01-01 09:00', '2026-01-02 09:00', '2026-01-03 09:00']],
 ]);
+
+it('inherits DATE-TIME master lengths for DATE RDATE without changing canonical data', function (string $timezone, string $end, string $date, ?string $expectedEnd) {
+    config(['icalendar_reader.floating_timezone' => $timezone]);
+    $contents = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE RDATE//EN\n"
+        . "BEGIN:VEVENT\nUID:mixed-date\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T090000Z\n"
+        . $end . "RDATE;VALUE=DATE:{$date}\nEND:VEVENT\nEND:VCALENDAR\n";
+    $calendar = ICalendar::read($contents);
+    $before = [$calendar->toJson(), $calendar->rawComponent()->serialize()];
+    $domainBefore = $calendar->toArray();
+    $componentBefore = $calendar->toComponentArray();
+    $start = CarbonImmutable::parse($date . ' 00:00:00', $timezone);
+    $occurrence = $calendar->occurrencesBetween($start, $start->addDays(4))->sole();
+
+    expect(ICalendar::tryRead($contents))->not->toBeNull();
+    expect($occurrence->startsAt?->toIso8601String())->toBe($start->toIso8601String());
+    expect($occurrence->endsAt?->toIso8601String())->toBe($expectedEnd);
+    expect([$occurrence->startIsDate, $occurrence->endIsDate, $occurrence->isAllDay()])->toBe([false, false, false]);
+    expect($occurrence->startIsFloating)->toBeTrue();
+    expect($occurrence->recurrenceId?->getTimestamp())->toBe($start->getTimestamp());
+
+    foreach (['DTSTART' => $occurrence->startsAt, 'DTEND' => $occurrence->endsAt] as $name => $value) {
+        $property = $occurrence->property($name);
+        if ($property === null) {
+            expect($name)->toBe('DTEND');
+            expect($end === '' || \str_starts_with($end, 'DURATION:'))->toBeTrue();
+
+            continue;
+        }
+
+        expect($property->type)->toBe('date-time');
+        $mapped = $property->toArray()['value'];
+        if (! $mapped instanceof CarbonImmutable || $value === null) {
+            throw new LogicException('Expected a mapped occurrence endpoint.');
+        }
+        expect($mapped->getTimestamp())->toBe($value->getTimestamp());
+        $raw = $occurrence->rawComponent()->select($name)[0];
+        if (! $raw instanceof SabreProperty) {
+            throw new LogicException('Expected a raw occurrence endpoint.');
+        }
+        expect($raw->getValueType())->toBe('DATE-TIME');
+        expect((string) $raw)->toBe($property->rawValue());
+    }
+
+    expect([$calendar->toJson(), $calendar->rawComponent()->serialize()])->toBe($before);
+    Assert::assertEquals($domainBefore, $calendar->toArray());
+    Assert::assertEquals($componentBefore, $calendar->toComponentArray());
+    expect($calendar->events()->sole()->recurrenceDates->sole()->type)->toBe('date');
+
+    $endInstant = $occurrence->endsAt ?? $start;
+    expect($calendar->occurrencesBetween($start->subSecond(), $start))->toBeEmpty();
+    expect($calendar->occurrencesBetween($endInstant, $endInstant->addSecond()))->toHaveCount($expectedEnd === null ? 1 : 0);
+    expect($occurrence->endIsFloating)->toBe(\str_starts_with($end, 'DURATION:'));
+    if ($expectedEnd !== null) {
+        expect($calendar->occurrencesBetween($endInstant->subSecond(), $endInstant))->toHaveCount(1);
+    }
+})->with([
+    'one hour UTC' => ['UTC', "DTEND:20260101T100000Z\n", '20260103', '2026-01-03T01:00:00+00:00'],
+    'cross day exact' => ['UTC', "DTEND:20260102T103000Z\n", '20260103', '2026-01-04T01:30:00+00:00'],
+    'Taipei midnight' => ['Asia/Taipei', "DTEND:20260101T100000Z\n", '20260103', '2026-01-02T17:00:00+00:00'],
+    'nominal spring day' => ['America/New_York', "DURATION:P1D\n", '20260308', '2026-03-09T00:00:00-04:00'],
+    'accurate spring day' => ['America/New_York', "DURATION:PT24H\n", '20260308', '2026-03-09T01:00:00-04:00'],
+    'nominal fall day' => ['America/New_York', "DURATION:P1D\n", '20261101', '2026-11-02T00:00:00-05:00'],
+    'point master' => ['Asia/Taipei', '', '20260103', null],
+]);
+
+it('maps DATE RDATE midnight independently of the master timezone', function (string $end, bool $floatingMaster, string $expectedEnd) {
+    config(['icalendar_reader.floating_timezone' => 'Asia/Taipei']);
+    $contents = durationRecurrenceContents($end . "RDATE;VALUE=DATE:20260308\n");
+    if ($floatingMaster) {
+        $contents = \str_replace('DTSTART;TZID=America/New_York:', 'DTSTART:', $contents);
+    }
+    $calendar = ICalendar::read($contents);
+    $start = CarbonImmutable::parse('2026-03-08', 'Asia/Taipei');
+    $occurrence = $calendar->occurrencesBetween($start, $start->addDays(2))
+        ->sole(static fn (Event $event): bool => $event->startsAt?->getTimestamp() === $start->getTimestamp());
+
+    expect($occurrence->startsAt?->toIso8601String())->toBe('2026-03-08T00:00:00+08:00');
+    expect($occurrence->endsAt?->toIso8601String())->toBe($expectedEnd);
+    expect($occurrence->startIsFloating)->toBeTrue();
+    expect($occurrence->endIsFloating)->toBe($floatingMaster || \str_starts_with($end, 'DURATION:'));
+    expect($occurrence->startIsDate)->toBeFalse();
+    expect($occurrence->endIsDate)->toBeFalse();
+})->with([
+    'calendar TZID exact length' => ["DTEND;TZID=America/New_York:20260307T100000\n", false, '2026-03-07T17:00:00+00:00'],
+    'calendar TZID nominal length' => ["DURATION:P1D\n", false, '2026-03-09T00:00:00+08:00'],
+    'floating endpoint' => ["DTEND:20260307T100000\n", true, '2026-03-08T01:00:00+08:00'],
+]);
+
+it('retains DATE RDATE identity through exclusions duplicates overrides and cancellations', function (string $extra, string $override, array $expected) {
+    config(['icalendar_reader.floating_timezone' => 'UTC']);
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE RDATE Set//EN\n"
+        . "BEGIN:VEVENT\nUID:mixed-date\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T090000Z\nDTEND:20260101T100000Z\n"
+        . "RDATE;VALUE=DATE:20260104,20260103,20260103\n{$extra}END:VEVENT\n{$override}END:VCALENDAR\n");
+    $before = [$calendar->toJson(), $calendar->rawComponent()->serialize()];
+    $events = $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-03 UTC'), CarbonImmutable::parse('2026-01-05 UTC'));
+
+    expect($events->map(static fn (Event $event): ?string => $event->startsAt?->format('Y-m-d H:i'))->all())->toBe($expected);
+    expect([$calendar->toJson(), $calendar->rawComponent()->serialize()])->toBe($before);
+})->with([
+    'dedupe and sort' => ['', '', ['2026-01-03 00:00', '2026-01-04 00:00']],
+    'exclusion' => ["EXDATE:20260103T000000Z\n", '', ['2026-01-04 00:00']],
+    'moved override' => ['', "BEGIN:VEVENT\nUID:mixed-date\nDTSTAMP:20260101T000000Z\nRECURRENCE-ID:20260103T000000Z\nDTSTART:20260103T020000Z\nDURATION:PT1H\nEND:VEVENT\n", ['2026-01-03 02:00', '2026-01-04 00:00']],
+    'cancelled override' => ['', "BEGIN:VEVENT\nUID:mixed-date\nDTSTAMP:20260101T000000Z\nRECURRENCE-ID:20260103T000000Z\nDTSTART:20260103T020000Z\nSTATUS:CANCELLED\nEND:VEVENT\n", ['2026-01-04 00:00']],
+]);
+
+it('fails the whole DATE RDATE query when a required endpoint cannot resolve', function (string $start, string $end, string $date, string $from, string $until) {
+    config(['icalendar_reader.floating_timezone' => 'UTC']);
+    $contents = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE RDATE Failure//EN\n"
+        . "BEGIN:VEVENT\nUID:mixed-date\nDTSTAMP:20260101T000000Z\n{$start}\n{$end}RDATE;VALUE=DATE:{$date}\nEND:VEVENT\n"
+        . "BEGIN:VEVENT\nUID:ordinary\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T080000Z\nEND:VEVENT\nEND:VCALENDAR\n";
+    $calendar = ICalendar::read($contents);
+    $before = [$calendar->toJson(), $calendar->rawComponent()->serialize()];
+
+    expect(ICalendar::tryRead($contents))->not->toBeNull();
+    expect(fn () => $calendar->occurrencesBetween(CarbonImmutable::parse($from), CarbonImmutable::parse($until)))
+        ->toThrow(UnsupportedRecurrence::class);
+    expect([$calendar->toJson(), $calendar->rawComponent()->serialize()])->toBe($before);
+})->with([
+    'master start' => ['DTSTART;TZID=Unknown:20260101T090000', "DURATION:PT1H\n", '20260103', '2026-01-01 UTC', '2026-01-05 UTC'],
+    'master end' => ['DTSTART:20260101T090000Z', "DTEND;TZID=Unknown:20260101T100000\n", '20260103', '2026-01-01 UTC', '2026-01-05 UTC'],
+    'generated duration end' => ['DTSTART:20260101T090000Z', "DURATION:P1D\n", '99991231', '2026-01-01 UTC', '9999-12-31 23:59:59 UTC'],
+]);
+
+it('preserves the master DATE span for explicit RDATE inclusions', function () {
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE Span//EN\n"
+        . "BEGIN:VEVENT\nUID:date-span\nDTSTAMP:20260101T000000Z\nDTSTART;VALUE=DATE:20260101\n"
+        . "DTEND;VALUE=DATE:20260201\nRDATE;VALUE=DATE:20260201\nEND:VEVENT\nEND:VCALENDAR\n");
+    $before = $calendar->rawComponent()->serialize();
+    $events = $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01', 'Asia/Taipei'), CarbonImmutable::parse('2026-04-01', 'Asia/Taipei'));
+
+    expect($events->map(static fn (Event $event): ?string => $event->endsAt?->toDateString())->all())
+        ->toBe(['2026-02-01', '2026-03-04']);
+    expect($calendar->rawComponent()->serialize())->toBe($before);
+});
 
 it('expands equivalent padded numeric recurrence parts without changing raw rules', function (string $rule, string $until, array $expected) {
     $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Padded Recurrence//EN\n"

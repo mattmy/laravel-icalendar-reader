@@ -645,6 +645,21 @@ ICS);
         ->and($todoOutput['resources'])->toBe(['Projector', 'Room A', 'Whiteboard']);
 });
 
+it('preserves hydrated GEO precision in event todo and serialized shortcuts', function () {
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//GEO Precision//EN\n"
+        . "BEGIN:VEVENT\nUID:event-geo\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T090000Z\nGEO:0.1234567890123456;-122.12345678901234\nEND:VEVENT\n"
+        . "BEGIN:VTODO\nUID:todo-geo\nDTSTAMP:20260101T000000Z\nGEO:0.1234567890123456;-122.12345678901234\nEND:VTODO\nEND:VCALENDAR\n");
+    $expected = ['latitude' => 0.1234567890123456, 'longitude' => -122.12345678901234];
+
+    foreach ([$calendar->events()->sole(), $calendar->todos()->sole()] as $item) {
+        expect($item->geo)->toBe($expected);
+        expect($item->property('GEO')?->values)->toBe(\array_values($expected));
+    }
+
+    expect($calendar->toArray()['events'][0]['geo'])->toBe($expected);
+    expect($calendar->toArray()['todos'][0]['geo'])->toBe($expected);
+});
+
 it('keeps an invalid GEO property generic without exposing an invalid typed coordinate pair', function () {
     $event = ICalendar::read(<<<'ICS'
 BEGIN:VCALENDAR
