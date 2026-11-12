@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar\Support;
 
+use Carbon\CarbonImmutable;
 use Closure;
 use DateTimeZone;
 use Illuminate\Support\Collection;
@@ -172,12 +173,14 @@ final class EventOccurrenceExpander
                         }
 
                         $start = $mappedStart;
+                    }
 
-                        if (isset($master['component']->{PropertyName::DTEND}) && $masterEvent->endsAt !== null) {
-                            $end = $mappedStart->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
-                            $component->remove(PropertyName::DTEND);
-                            $component->add(PropertyName::DTEND, $end->utc()->format('Ymd\THis\Z'));
-                        }
+                    if (! $masterEvent->startIsDate && isset($master['component']->{PropertyName::DTEND}) && $masterEvent->endsAt !== null) {
+                        $end = CarbonImmutable::instance($start)->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
+                        $component->remove(PropertyName::DTEND);
+                        $component->add(PropertyName::DTEND, $masterEvent->endIsFloating
+                            ? $end->format('Ymd\THis')
+                            : $end->utc()->format('Ymd\THis\Z'));
                     }
 
                     if ($start->getTimestamp() >= $untilTimestamp || ($ruleUntil !== null && $start->getTimestamp() > $ruleUntil)) {

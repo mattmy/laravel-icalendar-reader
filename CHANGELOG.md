@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [0.8.2] - 2026-11-11
+
+### Fixed
+
+- Preserve the exact master DTEND duration for floating RRULE occurrences across daylight
+  saving transitions, while retaining floating endpoint properties.
+
 ## [0.8.1] - 2026-10-07
 
 ### Fixed
@@ -151,6 +158,7 @@ All notable changes to this project are documented here. The format follows Keep
 - Complete PHPDoc contracts with an automated reflection guard.
 - Self-contained interoperability fixtures, bilingual guides, and a repeatable benchmark command.
 
+[0.8.2]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.8.1
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0
 [0.2.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.2.0

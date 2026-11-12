@@ -217,6 +217,35 @@ it('fails the whole DATE RDATE query when a required endpoint cannot resolve', f
     'generated duration end' => ['DTSTART:20260101T090000Z', "DURATION:P1D\n", '99991231', '2026-01-01 UTC', '9999-12-31 23:59:59 UTC'],
 ]);
 
+it('preserves exact floating DTEND lengths across daylight saving transitions', function (string $start, string $end, string $inclusions) {
+    config(['icalendar_reader.floating_timezone' => 'America/New_York']);
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Floating End//EN\n"
+        . "BEGIN:VEVENT\nUID:floating-end\nDTSTAMP:20260101T000000Z\nDTSTART:{$start}\n"
+        . "DTEND:{$end}\n{$inclusions}\nEND:VEVENT\nEND:VCALENDAR\n");
+    $master = $calendar->events()->sole();
+    if ($master->startsAt === null || $master->endsAt === null) {
+        throw new LogicException('Expected resolved master endpoints.');
+    }
+    $length = $master->endsAt->getTimestamp() - $master->startsAt->getTimestamp();
+    $before = $calendar->toJson();
+    $events = $calendar->occurrencesBetween(CarbonImmutable::parse('2026-01-01 UTC'), CarbonImmutable::parse('2027-01-01 UTC'));
+
+    expect($events)->toHaveCount(2);
+    foreach ($events as $event) {
+        if ($event->startsAt === null || $event->endsAt === null) {
+            throw new LogicException('Expected resolved occurrence endpoints.');
+        }
+        expect($event->endsAt->getTimestamp() - $event->startsAt->getTimestamp())->toBe($length);
+        expect($event->endIsFloating)->toBeTrue();
+    }
+    expect($calendar->toJson())->toBe($before);
+})->with([
+    'spring RRULE' => ['20260307T090000', '20260308T090000', 'RRULE:FREQ=DAILY;COUNT=2'],
+    'fall RRULE' => ['20261031T090000', '20261101T090000', 'RRULE:FREQ=DAILY;COUNT=2'],
+    'spring RDATE' => ['20260306T090000', '20260307T090000', 'RDATE:20260307T090000'],
+    'fall RDATE' => ['20261030T090000', '20261031T090000', 'RDATE:20261031T090000'],
+]);
+
 it('preserves the master DATE span for explicit RDATE inclusions', function () {
     $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE Span//EN\n"
         . "BEGIN:VEVENT\nUID:date-span\nDTSTAMP:20260101T000000Z\nDTSTART;VALUE=DATE:20260101\n"
