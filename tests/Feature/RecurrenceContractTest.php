@@ -246,6 +246,38 @@ it('preserves exact floating DTEND lengths across daylight saving transitions', 
     'fall RDATE' => ['20261030T090000', '20261031T090000', 'RDATE:20261031T090000'],
 ]);
 
+it('preserves exclusive DATE recurrence endpoints across daylight saving transitions', function (string $zone, string $start, string $end, string $month, array $expected) {
+    config(['icalendar_reader.floating_timezone' => $zone]);
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE Span//EN\n"
+        . "BEGIN:VEVENT\nUID:date-rrule\nDTSTAMP:20260101T000000Z\nDTSTART;VALUE=DATE:{$start}\n"
+        . "DTEND;VALUE=DATE:{$end}\nRRULE:FREQ=DAILY;COUNT=3\nEND:VEVENT\nEND:VCALENDAR\n");
+
+    $from = CarbonImmutable::parse("2026-{$month}-01 UTC");
+    $events = $calendar->occurrencesBetween($from, $from->addMonth());
+
+    expect($events->map(static fn (Event $event): ?string => $event->endsAt?->toDateString())->all())->toBe($expected);
+    expect($events->every(static fn (Event $event): bool => $event->endIsDate))->toBeTrue();
+})->with([
+    'daytime transition' => ['America/New_York', '20260308', '20260309', '03', ['2026-03-09', '2026-03-10', '2026-03-11']],
+    'midnight transition' => ['America/Santiago', '20260906', '20260907', '09', ['2026-09-07', '2026-09-08', '2026-09-09']],
+]);
+
+it('expresses a floating recurrence end in the calendar floating timezone', function (string $start, string $inclusion) {
+    config(['icalendar_reader.floating_timezone' => 'America/New_York']);
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Mixed Recurrence//EN\n"
+        . "BEGIN:VEVENT\nUID:mixed\nDTSTAMP:20260101T000000Z\nDTSTART:{$start}\n"
+        . "DTEND:20260301T110000\n{$inclusion}\nEND:VEVENT\nEND:VCALENDAR\n");
+
+    $event = $calendar->occurrencesBetween(CarbonImmutable::parse('2026-03-02 UTC'), CarbonImmutable::parse('2026-03-03 UTC'))->sole();
+
+    expect($event->endsAt?->format('c'))->toBe('2026-03-02T11:00:00-05:00');
+    expect($event->endIsFloating)->toBeTrue();
+    expect($event->property('DTEND')?->rawValue())->toBe('20260302T110000');
+})->with([
+    'UTC RRULE start' => ['20260301T150000Z', 'RRULE:FREQ=DAILY;COUNT=2'],
+    'UTC RDATE start' => ['20260301T100000', 'RDATE:20260302T150000Z'],
+]);
+
 it('preserves the master DATE span for explicit RDATE inclusions', function () {
     $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//DATE Span//EN\n"
         . "BEGIN:VEVENT\nUID:date-span\nDTSTAMP:20260101T000000Z\nDTSTART;VALUE=DATE:20260101\n"

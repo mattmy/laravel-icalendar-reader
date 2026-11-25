@@ -175,14 +175,6 @@ final class EventOccurrenceExpander
                         $start = $mappedStart;
                     }
 
-                    if (! $masterEvent->startIsDate && isset($master['component']->{PropertyName::DTEND}) && $masterEvent->endsAt !== null) {
-                        $end = CarbonImmutable::instance($start)->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
-                        $component->remove(PropertyName::DTEND);
-                        $component->add(PropertyName::DTEND, $masterEvent->endIsFloating
-                            ? $end->format('Ymd\THis')
-                            : $end->utc()->format('Ymd\THis\Z'));
-                    }
-
                     if ($start->getTimestamp() >= $untilTimestamp || ($ruleUntil !== null && $start->getTimestamp() > $ruleUntil)) {
                         break;
                     }
@@ -195,6 +187,9 @@ final class EventOccurrenceExpander
 
                     if (! isset($exclusions[$key]) && ! isset($seen[$key])) {
                         $seen[$key] = true;
+                        if (isset($master['component']->{PropertyName::DTEND})) {
+                            $this->applyMasterEnd($component, $masterEvent, CarbonImmutable::instance($start), $timezone);
+                        }
                         $this->removeRecurrenceGenerators($component);
                         $this->appendOccurrence(
                             component: $component,
@@ -439,19 +434,8 @@ final class EventOccurrenceExpander
                         $startProperty = $this->rawProperty($component, PropertyName::DTSTART);
                         $date = (new DateTimeMapper())->value($startProperty, $timezone->getName());
 
-                        if ($date !== null && $startProperty instanceof DateTimeProperty) {
-                            if ($property->getValueType() === 'DATE' && $masterEvent->startIsDate) {
-                                $endDate = clone $startProperty;
-                                $endDate->name = PropertyName::DTEND;
-                                $days = (int) $masterEvent->startsAt->diffInDays($masterEvent->endsAt);
-                                $endDate->setValue($date->addDays($days)->format('Ymd'));
-                                $component->add($endDate);
-                            } else {
-                                $endDate = $date->addSeconds($masterEvent->endsAt->getTimestamp() - $masterEvent->startsAt->getTimestamp());
-                                $component->add(PropertyName::DTEND, $masterEvent->endIsFloating
-                                    ? $endDate->format('Ymd\THis')
-                                    : $endDate->utc()->format('Ymd\THis\Z'));
-                            }
+                        if ($date !== null) {
+                            $this->applyMasterEnd($component, $masterEvent, $date, $timezone);
                         }
                     }
                 } elseif (\str_starts_with($end, 'P') || \str_starts_with($end, '+P')) {
@@ -479,6 +463,41 @@ final class EventOccurrenceExpander
                 );
             }
         }
+    }
+
+    /** Carry the master's calendar day span or elapsed time into a generated occurrence. */
+    private function applyMasterEnd(VEvent $component, Event $master, CarbonImmutable $start, DateTimeZone $floatingTimezone): void
+    {
+        if ($master->startsAt === null || $master->endsAt === null) {
+            return;
+        }
+
+        $startProperty = $this->rawProperty($component, PropertyName::DTSTART);
+
+        if ($master->startIsDate && $startProperty instanceof DateTimeProperty && $startProperty->getValueType() === 'DATE') {
+            $masterStart = $master->property(PropertyName::DTSTART)?->rawValue() ?? $master->startsAt->format('Ymd');
+            $masterEnd = $master->property(PropertyName::DTEND)?->rawValue();
+            // DATE spans count calendar dates, even when a timezone skips midnight.
+            $days = $masterEnd === null ? 1 : (int) CarbonImmutable::instance(DateTimeParser::parseDate($masterStart))
+                ->diffInDays(DateTimeParser::parseDate($masterEnd));
+            $end = $this->rawProperty($component, PropertyName::DTEND);
+
+            if ($end === null) {
+                $end = clone $startProperty;
+                $end->name = PropertyName::DTEND;
+                $component->add($end);
+            }
+
+            $end->setValue(CarbonImmutable::instance(DateTimeParser::parseDate((string) $startProperty))->addDays($days)->format('Ymd'));
+
+            return;
+        }
+
+        $end = $start->addSeconds($master->endsAt->getTimestamp() - $master->startsAt->getTimestamp());
+        $component->remove(PropertyName::DTEND);
+        $component->add(PropertyName::DTEND, $master->endIsFloating
+            ? $end->setTimezone($floatingTimezone)->format('Ymd\THis')
+            : $end->utc()->format('Ymd\THis\Z'));
     }
 
     /** Copy one PERIOD endpoint into a concrete VEVENT date-time property. */
