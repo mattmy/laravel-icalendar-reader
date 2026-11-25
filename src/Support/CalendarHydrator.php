@@ -77,10 +77,14 @@ final readonly class CalendarHydrator
             }
         }
 
+        $warn = static function (CalendarIssue $issue) use (&$warnings): void {
+            $warnings[] = $issue;
+        };
+        $properties = $this->propertyHydrator->hydrate($component, $floatingTimezone, $warn);
         $components = [];
 
         foreach ($componentOrder[\spl_object_id($component)] ?? [] as $child) {
-            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder);
+            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder, $warn);
         }
 
         return new Calendar(
@@ -93,7 +97,7 @@ final readonly class CalendarHydrator
             todoItems: $todos,
             journalItems: $journals,
             warningItems: [...$warnings, ...$this->dateTimeMapper->issues($component)],
-            propertyItems: $this->propertyHydrator->hydrate($component, $floatingTimezone),
+            propertyItems: $properties,
             componentItems: $components,
             component: $component,
             eventHydrator: fn (VEvent $event): Event => $this->hydrateEvent($event, $floatingTimezone),
@@ -124,13 +128,11 @@ final readonly class CalendarHydrator
         $startsAt = $this->dateTimeMapper->value($startProperty, $floatingTimezone);
         $endsAt = $this->dateTimeMapper->value($endProperty, $floatingTimezone);
         $allDay = $this->dateTimeMapper->isDate($startProperty);
-        $duration = $durationProperty instanceof DurationProperty
-            ? $durationProperty->getDateInterval()
-            : null;
+        $duration = $this->mappedDuration($properties, PropertyName::DURATION);
 
         if ($endProperty === null && $startsAt !== null && $duration !== null) {
             $endsAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
-        } elseif ($endProperty === null && $duration === null && $startsAt !== null && $allDay) {
+        } elseif ($endProperty === null && $durationProperty === null && $startsAt !== null && $allDay) {
             $duration = new DateInterval('P1D');
             $endsAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
         } elseif ($startsAt !== null && $endsAt !== null) {
@@ -194,13 +196,10 @@ final readonly class CalendarHydrator
         $properties = $this->propertyHydrator->hydrate($component, $floatingTimezone);
         $startProperty = $this->firstProperty($component, PropertyName::DTSTART);
         $dueProperty = $this->firstProperty($component, PropertyName::DUE);
-        $durationProperty = $this->firstProperty($component, PropertyName::DURATION);
         $recurrenceIdProperty = $this->firstProperty($component, PropertyName::RECURRENCE_ID);
         $startsAt = $this->dateTimeMapper->value($startProperty, $floatingTimezone);
         $dueAt = $this->dateTimeMapper->value($dueProperty, $floatingTimezone);
-        $duration = $durationProperty instanceof DurationProperty
-            ? $durationProperty->getDateInterval()
-            : null;
+        $duration = $this->mappedDuration($properties, PropertyName::DURATION);
 
         if ($dueProperty === null && $startsAt !== null && $duration !== null) {
             $dueAt = $this->dateTimeMapper->durationEnd($startProperty, $duration, $floatingTimezone);
@@ -379,11 +378,15 @@ final readonly class CalendarHydrator
         $trigger = null;
 
         if ($triggerProperty instanceof DurationProperty) {
-            $trigger = new AlarmTrigger(
-                relativeDuration: $triggerProperty->getDateInterval(),
-                absoluteDateTime: null,
-                relation: $this->upperParameter($this->propertyHydrator->parameters($triggerProperty), ParameterName::RELATED) ?? 'START',
-            );
+            $relativeDuration = $this->mappedDuration($properties, PropertyName::TRIGGER);
+
+            if ($relativeDuration !== null) {
+                $trigger = new AlarmTrigger(
+                    relativeDuration: $relativeDuration,
+                    absoluteDateTime: null,
+                    relation: $this->upperParameter($this->propertyHydrator->parameters($triggerProperty), ParameterName::RELATED) ?? 'START',
+                );
+            }
         } elseif ($triggerProperty instanceof DateTimeProperty) {
             $trigger = new AlarmTrigger(
                 relativeDuration: null,
@@ -400,9 +403,7 @@ final readonly class CalendarHydrator
             attendees: $this->hydrateAttendees($component),
             attachments: collect($this->hydratedProperties($properties, PropertyName::ATTACH)),
             repeat: $this->integerProperty($component, PropertyName::REPEAT),
-            duration: ($duration = $this->firstProperty($component, PropertyName::DURATION)) instanceof DurationProperty
-                ? $duration->getDateInterval()
-                : null,
+            duration: $this->mappedDuration($properties, PropertyName::DURATION),
             propertyItems: $properties,
             component: $component,
         );
@@ -412,18 +413,20 @@ final readonly class CalendarHydrator
      * Hydrate a generic component and its direct children in source order.
      *
      * @param  array<int, list<SabreComponent>>  $componentOrder
+     * @param  callable(CalendarIssue): void  $warn
      */
-    private function hydrateComponent(SabreComponent $component, string $floatingTimezone, array $componentOrder): Component
+    private function hydrateComponent(SabreComponent $component, string $floatingTimezone, array $componentOrder, callable $warn): Component
     {
+        $properties = $this->propertyHydrator->hydrate($component, $floatingTimezone, $warn);
         $components = [];
 
         foreach ($componentOrder[\spl_object_id($component)] ?? [] as $child) {
-            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder);
+            $components[] = $this->hydrateComponent($child, $floatingTimezone, $componentOrder, $warn);
         }
 
         return new Component(
             name: \strtoupper($component->name),
-            propertyItems: $this->propertyHydrator->hydrate($component, $floatingTimezone),
+            propertyItems: $properties,
             componentItems: $components,
             component: $component,
         );
@@ -592,6 +595,18 @@ final readonly class CalendarHydrator
         }
 
         return null;
+    }
+
+    /**
+     * Copy the mapped duration so typed shortcuts and generic properties can vary independently.
+     *
+     * @param  list<Property>  $properties
+     */
+    private function mappedDuration(array $properties, string $name): ?DateInterval
+    {
+        $value = $this->firstHydratedProperty($properties, $name)?->value;
+
+        return $value instanceof DateInterval ? clone $value : null;
     }
 
     /**

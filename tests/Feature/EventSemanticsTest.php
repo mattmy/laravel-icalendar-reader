@@ -12,6 +12,45 @@ use Mattmy\ICalendar\Exceptions\UnresolvableEventRange;
 use Mattmy\ICalendar\Exceptions\UnsupportedRecurrence;
 use Mattmy\ICalendar\Facades\ICalendar;
 
+it('retains unrepresentable duration values without inventing endpoints', function (string $start, string $duration) {
+    config(['icalendar_reader.floating_timezone' => 'UTC']);
+    $contents = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Duration Range//EN\n"
+        . "BEGIN:VEVENT\nUID:duration-event\nDTSTAMP:20260101T000000Z\nDTSTART{$start}\nDURATION:{$duration}\nEND:VEVENT\n"
+        . "BEGIN:VTODO\nUID:duration-todo\nDTSTAMP:20260101T000000Z\nDTSTART{$start}\nDURATION:{$duration}\nEND:VTODO\nEND:VCALENDAR\n";
+    $from = CarbonImmutable::parse('2026-01-01 UTC');
+    $until = $from->addDays(2);
+
+    $calendar = ICalendar::read($contents);
+    $event = $calendar->events()->sole();
+    $todo = $calendar->todos()->sole();
+
+    foreach ([$event, $todo] as $item) {
+        expect($item->startsAt)->not->toBeNull();
+        expect($item->duration)->toBeNull();
+        $property = $item->property('DURATION');
+        expect($property?->rawValue())->toBe($duration);
+        expect($property?->value)->toBeNull();
+        expect($property?->values)->toBe([]);
+    }
+    expect($event->endsAt)->toBeNull();
+    expect($event->lastDay)->toBeNull();
+    expect($todo->dueAt)->toBeNull();
+    expect($calendar->warnings()->where('code', 'mapping_warning')->pluck('property')->all())->toBe(['DURATION', 'DURATION']);
+    expect(fn () => $calendar->eventsBetween($from, $until))->toThrow(UnresolvableEventRange::class);
+    expect(fn () => $calendar->occurrencesBetween($from, $until))->toThrow(UnresolvableEventRange::class);
+    expect($calendar->eventsBetween($from->subDay(), $from))->toBeEmpty();
+
+    $recurring = ICalendar::tryRead(\str_replace('END:VEVENT', "RRULE:FREQ=DAILY;COUNT=2\nEND:VEVENT", $contents));
+    if ($recurring === null) {
+        throw new LogicException('Expected the recurring event to remain readable.');
+    }
+    expect(fn () => $recurring->occurrencesBetween($from, $until))->toThrow(UnsupportedRecurrence::class);
+})->with([
+    'constructor rejects huge hours' => [':20260101T010000Z', 'PT99999999999999999999H'],
+    'week conversion overflows' => [':20260101T010000Z', 'P99999999999999999999W'],
+    'all-day duration' => [';VALUE=DATE:20260101', 'P99999999999999999999D'],
+]);
+
 /** Read event and todo counterparts against the same calendar-defined timezone. */
 function durationCalendar(string $start, string $properties, ?string $observances = null): Calendar
 {

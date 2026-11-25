@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Mattmy\ICalendar\Support;
 
+use DateInterval;
+use Exception;
 use LogicException;
+use Mattmy\ICalendar\CalendarIssue;
 use Mattmy\ICalendar\Property;
 use Sabre\VObject\Component as SabreComponent;
 use Sabre\VObject\Parameter;
@@ -26,11 +29,12 @@ final readonly class PropertyHydrator
     ) {}
 
     /**
-     * Hydrate all direct properties in document order.
+     * Hydrate all direct properties in document order and append mapping warnings when requested.
      *
+     * @param  (callable(CalendarIssue): void)|null  $warn
      * @return list<Property>
      */
-    public function hydrate(SabreComponent $component, string $floatingTimezone): array
+    public function hydrate(SabreComponent $component, string $floatingTimezone, ?callable $warn = null): array
     {
         $properties = [];
 
@@ -42,10 +46,25 @@ final readonly class PropertyHydrator
 
         \usort($properties, static fn (SabreProperty $left, SabreProperty $right): int => ($left->lineIndex ?? \PHP_INT_MAX) <=> ($right->lineIndex ?? \PHP_INT_MAX));
 
-        return \array_map(
-            fn (SabreProperty $property): Property => $this->hydrateProperty($property, $floatingTimezone),
-            $properties,
-        );
+        $mappedProperties = [];
+
+        foreach ($properties as $property) {
+            $mapped = $this->hydrateProperty($property, $floatingTimezone);
+            $mappedProperties[] = $mapped;
+
+            if ($warn !== null && $mapped->type === 'duration' && $mapped->values === []) {
+                $warn(new CalendarIssue(
+                    level: CalendarIssue::LEVEL_WARNING,
+                    code: 'mapping_warning',
+                    message: 'The duration property could not be represented as a typed value.',
+                    source: 'mapping',
+                    component: $component->name,
+                    property: $mapped->name,
+                ));
+            }
+        }
+
+        return $mappedProperties;
     }
 
     /**
@@ -116,7 +135,13 @@ final readonly class PropertyHydrator
         }
 
         if ($property instanceof DurationProperty) {
-            return [$property->getDateInterval()];
+            if (\str_starts_with($property->name ?? '', 'X-') && \count($property->getParts()) > 1) {
+                return [];
+            }
+
+            $duration = $this->durationValue($property);
+
+            return $duration === null ? [] : [$duration];
         }
 
         $type = \strtoupper($property->getValueType());
@@ -147,6 +172,35 @@ final readonly class PropertyHydrator
             },
             $parts,
         );
+    }
+
+    /** Map a validated duration only when every numeric field can be represented exactly. */
+    private function durationValue(DurationProperty $property): ?DateInterval
+    {
+        try {
+            $duration = $property->getDateInterval();
+        } catch (Exception) {
+            return null;
+        }
+
+        $raw = ParserValue::text($property->getParts()[0] ?? null);
+        \preg_match_all('/([0-9]+)([WDHMS])/', $raw, $parts, \PREG_SET_ORDER);
+
+        foreach ($parts as [, $digits, $unit]) {
+            $mapped = match ($unit) {
+                'W' => \intdiv($duration->d, 7),
+                'D' => $duration->d,
+                'H' => $duration->h,
+                'M' => $duration->i,
+                'S' => $duration->s,
+            };
+
+            if ((string) $mapped !== (\ltrim($digits, '0') ?: '0')) {
+                return null;
+            }
+        }
+
+        return $duration;
     }
 
     /**
