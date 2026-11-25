@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. The format follows Keep a Changelog and the project follows Semantic Versioning.
 
+## [0.8.3] - 2026-11-25
+
+### Fixed
+
+- Preserve all-day recurrence spans across daylight saving transitions and express
+  floating occurrence endpoints in the calendar's floating timezone.
+- Validate UTC UNTIL on every timezone observance rule.
+- Keep raw property iterators and document references isolated from the original calendar.
+- Preserve the full raw value of `X-*` duration properties with multiple parts and report a
+  mapping warning when they have no typed value.
+- Preserve valid duration properties that PHP cannot represent and report a mapping warning.
+  Duration-derived event and task endpoints remain unresolved.
+
 ## [0.8.2] - 2026-11-11
 
 ### Fixed
@@ -158,6 +171,7 @@ All notable changes to this project are documented here. The format follows Keep
 - Complete PHPDoc contracts with an automated reflection guard.
 - Self-contained interoperability fixtures, bilingual guides, and a repeatable benchmark command.
 
+[0.8.3]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/mattmy/laravel-icalendar-reader/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.8.1
 [0.1.0]: https://github.com/mattmy/laravel-icalendar-reader/releases/tag/v0.1.0

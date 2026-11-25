@@ -383,7 +383,7 @@ final readonly class Calendar implements JsonSerializable
      */
     public function rawComponent(): VCalendar
     {
-        return clone $this->component;
+        return Snapshot::raw($this->component);
     }
 
     /**

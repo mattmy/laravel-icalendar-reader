@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Mattmy\ICalendar\Support\Snapshot;
 use Sabre\VObject\Component as SabreComponent;
 
 /** Represent an readonly generic view of an untyped iCalendar component. */
@@ -52,10 +53,7 @@ final readonly class Component
     /** Return a deep clone of the underlying low-level component. */
     public function rawComponent(): SabreComponent
     {
-        $copy = clone $this->component;
-        $copy->parent = null;
-
-        return $copy;
+        return Snapshot::raw($this->component);
     }
 
     /**

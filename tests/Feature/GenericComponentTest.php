@@ -7,6 +7,68 @@ use Mattmy\ICalendar\Facades\ICalendar;
 use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Support\ParserValue;
 
+it('preserves multi-part extension durations as raw values and warns once per source property', function () {
+    $calendar = ICalendar::read(<<<'ICS'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Extension Durations//EN
+X-SPAN;VALUE=DURATION:PT1H,PT2H
+BEGIN:VEVENT
+UID:extension-durations
+DTSTAMP:20260804T000000Z
+DTSTART:20260804T010000Z
+DURATION:PT3H
+X-SPAN;VALUE=DURATION:PT1H,PT2H
+X-SINGLE;VALUE=DURATION:PT1H
+END:VEVENT
+END:VCALENDAR
+ICS);
+
+    $event = $calendar->events()->sole();
+    $tree = $calendar->toComponentArray();
+    $expected = [
+        'name' => 'X-SPAN',
+        'type' => 'duration',
+        'value' => null,
+        'values' => [],
+        'parameters' => ['VALUE' => 'DURATION'],
+        'raw_value' => 'PT1H,PT2H',
+    ];
+
+    foreach ([$calendar, $event, $calendar->components('VEVENT')->sole()] as $snapshot) {
+        expect($snapshot->property('X-SPAN')?->toArray())->toBe($expected);
+    }
+    foreach ([$tree, $tree['components'][0]] as $component) {
+        expect(collect(normalizedComponentProperties($component))->firstWhere('name', 'X-SPAN'))->toBe($expected);
+    }
+    expect($calendar->rawComponent()->serialize())->toContain('X-SPAN;VALUE=DURATION:PT1H,PT2H');
+    expect($event->property('X-SINGLE')?->value)->toEqual(new DateInterval('PT1H'));
+    expect($event->duration)->toEqual(new DateInterval('PT3H'));
+
+    $warnings = $calendar->warnings()->where('code', 'mapping_warning');
+    expect($warnings->pluck('property')->all())->toBe(['X-SPAN', 'X-SPAN']);
+    expect($warnings->pluck('component')->sort()->values()->all())->toBe(['VCALENDAR', 'VEVENT']);
+});
+
+it('retains unrepresentable alarm and extension durations as raw properties', function () {
+    $raw = 'PT99999999999999999999M';
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Alarm Duration Range//EN\n"
+        . "X-SPAN;VALUE=DURATION:{$raw}\nBEGIN:VEVENT\nUID:alarm-duration-range\nDTSTAMP:20260101T000000Z\n"
+        . "DTSTART:20260101T010000Z\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:Reminder\nTRIGGER:-{$raw}\n"
+        . "REPEAT:2\nDURATION:{$raw}\nEND:VALARM\nEND:VEVENT\nEND:VCALENDAR\n");
+
+    $alarm = $calendar->events()->sole()->alarms->sole();
+
+    expect($alarm->trigger)->toBeNull();
+    expect($alarm->duration)->toBeNull();
+    expect($alarm->property('TRIGGER')?->rawValue())->toBe("-{$raw}");
+    expect($alarm->property('DURATION')?->rawValue())->toBe($raw);
+    expect($calendar->property('X-SPAN')?->rawValue())->toBe($raw);
+    expect($calendar->property('X-SPAN')?->value)->toBeNull();
+    expect($calendar->warnings()->where('code', 'mapping_warning')->pluck('property')->sort()->values()->all())
+        ->toBe(['DURATION', 'TRIGGER', 'X-SPAN']);
+});
+
 it('preserves scalar parser values in property and component exports', function (string $type, string $raw, bool|int|float $expected) {
     $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Scalar Values//EN\n"
         . "X-SCALAR;VALUE={$type}:{$raw}\nBEGIN:VEVENT\nUID:scalar\nDTSTAMP:20260804T000000Z\n"

@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Mattmy\ICalendar\Support\Snapshot;
 use Sabre\VObject\Component\VJournal;
 
 /** Represent an readonly typed view of one VJOURNAL component. */
@@ -70,10 +71,7 @@ final readonly class Journal
     /** Return a deep clone of the underlying low-level journal component. */
     public function rawComponent(): VJournal
     {
-        $copy = clone $this->component;
-        $copy->parent = null;
-
-        return $copy;
+        return Snapshot::raw($this->component);
     }
 
     /**
