@@ -219,14 +219,16 @@ final class CalendarValidator
             $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'RECURRENCE-ID must match the DTSTART value and local-time form.', $recurrenceId);
         }
 
-        $rule = $this->property($component, PropertyName::RRULE);
-        $until = $rule?->getParts()['UNTIL'] ?? null;
+        if ($start instanceof DateTimeProperty) {
+            foreach ($component->select(PropertyName::RRULE) as $rule) {
+                $until = $rule instanceof SabreProperty ? ($rule->getParts()['UNTIL'] ?? null) : null;
 
-        if ($start instanceof DateTimeProperty && $rule instanceof SabreProperty
-            && \is_string($until) && ! (\in_array($name, ['STANDARD', 'DAYLIGHT'], true)
-                ? $this->isValidDateValue($until) && \str_ends_with($until, 'Z')
-                : $this->untilMatchesStart($until, $start))) {
-            $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'RRULE UNTIL must match the DTSTART value and local-time form.', $rule);
+                if ($rule instanceof SabreProperty && \is_string($until) && ! (\in_array($name, ['STANDARD', 'DAYLIGHT'], true)
+                    ? $this->isValidDateValue($until) && \str_ends_with($until, 'Z')
+                    : $this->untilMatchesStart($until, $start))) {
+                    $issues[] = $this->issue(CalendarIssue::LEVEL_ERROR, 'RRULE UNTIL must match the DTSTART value and local-time form.', $rule);
+                }
+            }
         }
 
         return $issues;

@@ -152,6 +152,16 @@ it('retains DATE receiving exceptions and observance UTC UNTIL validation', func
     }
 });
 
+it('validates UTC UNTIL on every timezone observance rule', function (string $kind) {
+    $rule = 'FREQ=YEARLY;UNTIL=20260101T000000Z';
+    $valid = observanceValidationCalendar($kind, "{$rule}\nRRULE:FREQ=YEARLY;UNTIL=20300101T000000Z");
+    $invalid = observanceValidationCalendar($kind, "{$rule}\nRRULE:FREQ=YEARLY;UNTIL=20300101T000000");
+
+    expect(ICalendar::tryRead($valid))->not->toBeNull();
+    expect(fn () => ICalendar::read($invalid))->toThrow(InvalidCalendar::class);
+    expect(ICalendar::tryRead($invalid))->toBeNull();
+})->with(['STANDARD', 'DAYLIGHT']);
+
 /** Supply a valid local observance so failures identify its original RRULE. */
 function observanceValidationCalendar(string $kind, string $rule): string
 {
