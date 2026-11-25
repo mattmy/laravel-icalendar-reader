@@ -11,6 +11,53 @@ use Mattmy\ICalendar\Journal;
 use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Todo;
 use Sabre\VObject\Component as SabreComponent;
+use Sabre\VObject\Property as SabreProperty;
+
+it('isolates raw property iterators and document roots', function (string $route) {
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Raw Snapshot//EN\n"
+        . "BEGIN:VTODO\nUID:todo\nDTSTAMP:20260101T000000Z\nDTSTART:20260101T010000Z\n"
+        . "DUE:20260101T020000Z\nEND:VTODO\nEND:VCALENDAR\n");
+    $raw = match ($route) {
+        'calendar' => $calendar->rawComponent(),
+        'typed todo' => $calendar->todos()->sole()->rawComponent(),
+        'generic todo' => $calendar->components('VTODO')->sole()->rawComponent(),
+        default => throw new LogicException('Unknown raw route.'),
+    };
+    $property = $raw->select($route === 'calendar' ? 'VERSION' : 'DUE')[0] ?? null;
+    $otherCopy = $calendar->rawComponent();
+    $otherVersion = $otherCopy->select('VERSION')[0] ?? null;
+    $iterated = $property instanceof SabreProperty ? $property->getIterator()[0] ?? null : null;
+
+    if (! $property instanceof SabreProperty || ! $iterated instanceof SabreProperty || $property->root === null
+        || ! $otherVersion instanceof SabreProperty || $otherVersion->root === null) {
+        throw new LogicException('Expected a property with its raw document context.');
+    }
+
+    $before = $otherCopy->serialize();
+    expect($iterated)->toBe($property);
+    $iterated->setValue($route === 'calendar' ? '9.9' : '20260101T030000Z');
+    $property->root->add('X-CHANGED', 'Raw copy only');
+    expect($otherVersion->root->select('X-CHANGED'))->toBe([]);
+    expect($calendar->rawComponent()->serialize())->toBe($before);
+})->with(['calendar', 'typed todo', 'generic todo']);
+
+it('carries the timezone needed by a detached raw event', function () {
+    $calendar = ICalendar::read("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Example//Raw Zone//EN\n"
+        . "BEGIN:VTIMEZONE\nTZID:Local\nBEGIN:STANDARD\nDTSTART:20000101T000000\n"
+        . "TZOFFSETFROM:+0800\nTZOFFSETTO:+0800\nEND:STANDARD\nEND:VTIMEZONE\n"
+        . "BEGIN:VEVENT\nUID:local\nDTSTAMP:20260101T000000Z\nDTSTART;TZID=Local:20260101T090000\nEND:VEVENT\nEND:VCALENDAR\n");
+
+    $raw = $calendar->events()->sole()->rawComponent();
+    $start = $raw->select('DTSTART')[0] ?? null;
+    if (! $start instanceof SabreProperty || $start->root === null) {
+        throw new LogicException('Expected a raw DTSTART with a document context.');
+    }
+
+    expect(\count($start->root->select('VTIMEZONE')))->toBe(1);
+    $start->root->remove('VTIMEZONE');
+    expect($calendar->components('VTIMEZONE'))->toHaveCount(1);
+    expect($calendar->events()->sole()->startsAt?->format('P'))->toBe('+08:00');
+});
 
 it('does not expose canonical raw ancestors through a subtree clone', function (string $route) {
     $calendar = isolationCalendar();

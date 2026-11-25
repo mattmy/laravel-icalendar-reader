@@ -7,6 +7,7 @@ namespace Mattmy\ICalendar;
 use DateInterval;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Mattmy\ICalendar\Support\Snapshot;
 use Sabre\VObject\Component\VAlarm;
 
 /** Represent an readonly typed view of one VALARM component. */
@@ -42,10 +43,7 @@ final readonly class Alarm
     /** Return a deep clone of the underlying low-level alarm component. */
     public function rawComponent(): VAlarm
     {
-        $copy = clone $this->component;
-        $copy->parent = null;
-
-        return $copy;
+        return Snapshot::raw($this->component);
     }
 
     /**

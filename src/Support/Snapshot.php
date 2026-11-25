@@ -15,6 +15,10 @@ use Mattmy\ICalendar\Journal;
 use Mattmy\ICalendar\Property;
 use Mattmy\ICalendar\Todo;
 use Sabre\VObject\Component as SabreComponent;
+use Sabre\VObject\Component\VCalendar;
+use Sabre\VObject\ElementList;
+use Sabre\VObject\Parameter;
+use Sabre\VObject\Property as SabreProperty;
 
 /**
  * @internal Detach mutable descendants of selected public query results.
@@ -23,6 +27,28 @@ use Sabre\VObject\Component as SabreComponent;
  */
 final class Snapshot
 {
+    /**
+     * Copy a raw subtree with its own document context and Sabre iterators.
+     *
+     * @template T of SabreComponent
+     *
+     * @param  T  $source
+     * @return T
+     */
+    public static function raw(SabreComponent $source): SabreComponent
+    {
+        $root = new VCalendar([], false);
+        $timezones = $source instanceof VCalendar ? null : [];
+        $copy = $source instanceof VCalendar ? $root : $root->createComponent((string) $source->name, defaults: false);
+        self::copyRawChildren($source, $copy, $root, $timezones);
+
+        if (! $copy instanceof ($source::class)) {
+            throw new LogicException('The raw snapshot component type does not match its source.');
+        }
+
+        return $copy;
+    }
+
     /** Return a detached event with the existing public field types. */
     public static function event(Event $source): Event
     {
@@ -241,6 +267,46 @@ final class Snapshot
             componentItems: $children,
             component: $raw,
         );
+    }
+
+    /**
+     * Copy children once and include any timezone definitions needed by a detached subtree.
+     *
+     * @param  array<string, true>|null  $timezones
+     */
+    private static function copyRawChildren(SabreComponent $source, SabreComponent $copy, VCalendar $root, ?array &$timezones): void
+    {
+        foreach ($source->children() as $child) {
+            if ($child instanceof SabreComponent) {
+                $component = $root->createComponent((string) $child->name, defaults: false);
+                $copy->add($component);
+                self::copyRawChildren($child, $component, $root, $timezones);
+            } elseif ($child instanceof SabreProperty) {
+                $property = clone $child;
+                $property->root = $root;
+                if ($property->getIterator()?->current() !== $property) {
+                    $property->setIterator(new ElementList([$property]));
+                }
+                $copy->add($property);
+
+                $tzid = $child[ParameterName::TZID];
+                if ($timezones !== null && $tzid instanceof Parameter && $child->root instanceof VCalendar) {
+                    $name = (string) $tzid;
+                    if (! isset($timezones[$name])) {
+                        $timezones[$name] = true;
+                        foreach ($child->root->select('VTIMEZONE') as $definition) {
+                            $id = $definition instanceof SabreComponent ? ($definition->select('TZID')[0] ?? null) : null;
+                            if ($definition instanceof SabreComponent && $id instanceof SabreProperty && (string) $id === $name) {
+                                $zone = $root->createComponent('VTIMEZONE', defaults: false);
+                                $root->add($zone);
+                                $standalone = null;
+                                self::copyRawChildren($definition, $zone, $root, $standalone);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** Copy a date because CarbonImmutable instance settings remain mutable. */

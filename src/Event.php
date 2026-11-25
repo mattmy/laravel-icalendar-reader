@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use DateInterval;
 use Illuminate\Support\Collection;
 use Mattmy\ICalendar\Concerns\QueriesProperties;
+use Mattmy\ICalendar\Support\Snapshot;
 use Sabre\VObject\Component\VEvent;
 
 /** Represent an readonly typed view of one VEVENT component. */
@@ -101,10 +102,7 @@ final readonly class Event
      */
     public function rawComponent(): VEvent
     {
-        $copy = clone $this->component;
-        $copy->parent = null;
-
-        return $copy;
+        return Snapshot::raw($this->component);
     }
 
     /**

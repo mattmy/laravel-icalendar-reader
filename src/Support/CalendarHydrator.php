@@ -95,7 +95,7 @@ final readonly class CalendarHydrator
             warningItems: [...$warnings, ...$this->dateTimeMapper->issues($component)],
             propertyItems: $this->propertyHydrator->hydrate($component, $floatingTimezone),
             componentItems: $components,
-            component: clone $component,
+            component: $component,
             eventHydrator: fn (VEvent $event): Event => $this->hydrateEvent($event, $floatingTimezone),
         );
     }
@@ -184,7 +184,7 @@ final readonly class CalendarHydrator
             relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
             recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
             propertyItems: $properties,
-            component: clone $component,
+            component: $component,
         );
     }
 
@@ -254,7 +254,7 @@ final readonly class CalendarHydrator
             relatedTo: collect($this->hydratedProperties($properties, PropertyName::RELATED_TO)),
             recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
             propertyItems: $properties,
-            component: clone $component,
+            component: $component,
         );
     }
 
@@ -296,7 +296,7 @@ final readonly class CalendarHydrator
             recurrenceDates: collect($this->hydratedProperties($properties, PropertyName::RDATE)),
             requestStatuses: collect($this->hydratedProperties($properties, PropertyName::REQUEST_STATUS)),
             propertyItems: $properties,
-            component: clone $component,
+            component: $component,
         );
     }
 
@@ -404,7 +404,7 @@ final readonly class CalendarHydrator
                 ? $duration->getDateInterval()
                 : null,
             propertyItems: $properties,
-            component: clone $component,
+            component: $component,
         );
     }
 
