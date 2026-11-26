@@ -2,21 +2,15 @@
 
 [繁體中文](README.zh-TW.md)
 
-Read and validate `.ics` calendars in Laravel, then query events, todos, dates, participants,
-alarms, recurrence data, properties, and components through `ICalendar`.
+Read and validate `.ics` files in Laravel with the `ICalendar` facade.
 
 ## Features
 
-- Read complete strings, local files, streams, and Laravel uploaded files with a configurable
-  byte limit.
-- Query events, todos, and journals in document order or by exact UID; query events by date range.
-- Get common calendar fields as `CarbonImmutable`, `DateInterval`, and Laravel Collections.
-- Inspect organizers, attendees, delegation details, alarms, recurrence data, and all-day or
-  floating-time behavior.
-- Access repeated, custom, and non-event data through `Property` and `Component` objects.
-- Choose exceptions or `null` for invalid content and inspect structured warnings after a
-  successful read.
-- Convert results to arrays, JSON, or a complete property and component tree.
+- Query events, todos, and journals by UID. Use date ranges to find events and expand recurring events.
+- Read dates as `CarbonImmutable` and durations as `DateInterval`. Access organizers, attendees,
+  delegation details, and alarms through typed fields.
+- Use `Property` and `Component` for repeated values, extensions, and components such as `VFREEBUSY`.
+- Export common fields as an array or JSON, or get the complete property and component tree.
 
 ## Requirements
 
@@ -37,12 +31,11 @@ composer require mattmy/laravel-icalendar-reader
 
 ## Configuration
 
-The package works immediately with these defaults:
+- `max_bytes` defaults to 10 MiB per input.
+- `floating_timezone` defaults to `null`. DATE values and date-times without `Z` or `TZID` use
+  `app.timezone` when it is valid, or UTC otherwise.
 
-- `max_bytes`: accepts up to 10 MiB per input.
-- `floating_timezone`: uses `app.timezone` for date-times without `Z` or `TZID`.
-
-Publish `config/icalendar_reader.php` when you need different values:
+Publish `config/icalendar_reader.php` to change these settings.
 
 ```bash
 php artisan vendor:publish --tag=icalendar-reader-config
@@ -74,7 +67,7 @@ echo $event->startsAt?->toIso8601String(); // 2026-08-10T09:00:00+00:00
 
 ## Read calendar data
 
-Choose the method that matches the input source:
+Choose one method for your input source.
 
 ```php
 use Mattmy\ICalendar\Facades\ICalendar;
@@ -85,9 +78,9 @@ $calendar = ICalendar::fromStream($stream);
 $calendar = ICalendar::fromUploadedFile($uploadedFile);
 ```
 
-Each method returns the same `Calendar` type. Its matching `try*()` method returns `null` for
-invalid iCalendar content; source, size, and configuration failures keep their specific
-exceptions.
+All four methods return a `Calendar` on success. Use the matching `try*()` method, such as
+`tryFromPath()`, to get `null` for invalid content. Source, size, and configuration failures
+still throw their own exceptions.
 
 ```php
 $events = $calendar->events('event@example.test');
@@ -102,14 +95,17 @@ $customProperty = $calendar->property('X-CUSTOM');
 $json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-UID matching is case-sensitive. Collections preserve document order. `eventsBetween()` uses
-the event components present in the input; `occurrencesBetween()` expands bounded VEVENT
-recurrence, including explicit `RDATE;VALUE=PERIOD` durations, with a 3,500-candidate work cap.
+UID matching is case-sensitive. `events()`, `todos()`, and `journals()` return results in
+calendar order. `eventsBetween()` checks the events stored in the calendar.
+`occurrencesBetween()` also expands recurring events, including `RDATE;VALUE=PERIOD`,
+and sorts results by start time. It throws `RecurrenceLimitExceeded` if it needs to check
+more than 3,500 candidates.
 
-Matching calendar `VTIMEZONE` definitions take precedence over host tzdata. Alarm objects
-expose attachments, direct properties, extension data, and raw components.
-Journals preserve repeated descriptions and recurrence data, but do not provide alarm, range,
-or recurrence-expansion APIs.
+`eventsBetween()` throws `UnresolvableEventRange` when it cannot resolve a required end time.
+The same applies to non-recurring events in `occurrencesBetween()`. If recurrence expansion
+needs a date it cannot resolve, it throws `UnsupportedRecurrence`.
+
+`TZID` dates use the calendar’s matching `VTIMEZONE`.
 
 ## Validation and warnings
 
@@ -125,18 +121,16 @@ try {
 }
 ```
 
-`issues()` explains rejected content. `warnings()` reports readable content or configuration
-that needs attention. Validation includes package-level temporal, alarm, date-time, integer,
-BOOLEAN/FLOAT, PERIOD, and basic RRULE rules in addition to Sabre validation; this API accepts
-exactly one VCALENDAR object. Invalid original values are rejected before hydration; valid rules
-that cannot be expanded remain subject to `UnsupportedRecurrence`.
+Each read accepts exactly one `VCALENDAR`. Use `InvalidCalendar::issues()` to inspect rejected
+content and `Calendar::warnings()` to check for warnings after a successful read. A valid
+rule can be read even when `occurrencesBetween()` would throw `UnsupportedRecurrence`.
 
 ## Performance and security
 
-Keep `max_bytes` appropriate for the largest calendar your application accepts. Use trusted
-local paths with `fromPath()`, close caller-owned streams, escape calendar text before display,
-validate calendar URLs before navigation, and avoid logging complete input or output that may
-contain personal data.
+The reader loads the full calendar into memory. Set `max_bytes` to suit your application.
+Pass trusted local paths to `fromPath()` and close streams you open. Escape calendar text
+before displaying it, validate links before opening them, and avoid logging full calendars
+that may contain personal data.
 
 ## Documentation
 
