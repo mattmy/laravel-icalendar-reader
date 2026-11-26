@@ -2,19 +2,14 @@
 
 [English](README.md)
 
-在 Laravel 讀取並驗證 `.ics` 行事曆，再透過 `ICalendar` 查詢事件、待辦、日期、參與者、
-提醒、recurrence 資料、properties 與 components。
+在 Laravel 透過 `ICalendar` Facade 讀取並驗證 `.ics` 行事曆。
 
 ## 特色
 
-- 從完整字串、本機檔案、stream 或 Laravel 上傳檔案讀取資料，並以可設定的 bytes 上限
-  控制輸入大小。
-- 依原始順序或完全符合的 UID 查詢事件、待辦與日誌；依日期範圍查詢事件。
-- 以 `CarbonImmutable`、`DateInterval` 與 Laravel Collections 取得常用行事曆欄位。
-- 取得主辦人、參與者、委派資料、提醒、recurrence 資料，以及全天與 floating time 行為。
-- 透過 `Property` 與 `Component` 取得重複、自訂及非事件資料。
-- 選擇讓不合法內容拋出例外或回傳 `null`，並在成功讀取後查看結構化 warnings。
-- 將結果轉成 array、JSON 或完整的 property 與 component 階層。
+- 依 UID 查詢事件、待辦和日誌，也可依日期範圍查詢並展開重複事件。
+- 以 `CarbonImmutable` 取得日期、以 `DateInterval` 取得時長。主辦人、參與者、委派資料與提醒也有對應欄位。
+- 透過 `Property` 和 `Component` 取得重複值、擴充屬性與 `VFREEBUSY` 等元件。
+- 將常用欄位匯出為陣列或 JSON，或取得完整的屬性與元件階層。
 
 ## 系統需求
 
@@ -22,10 +17,10 @@
 | --- | --- | --- |
 | PHP | PHP 8.x 系列的 8.2 以上版本 | 8.2、8.3、8.4、8.5 |
 | Laravel | 11、12、13 | 11、12、13 |
-| PHP extensions | DOM、JSON、Multibyte String、XMLReader、XMLWriter | Composer 安裝時檢查 |
+| PHP 擴充模組 | DOM、JSON、Multibyte String、XMLReader、XMLWriter | Composer 安裝時檢查 |
 | libxml | 2.6.20 以上版本 | Composer 安裝時檢查 |
 
-PHP extensions 與 libxml 需求來自 Sabre/VObject 5 和 Sabre/XML。
+PHP 擴充模組 與 libxml 需求來自 Sabre/VObject 5 和 Sabre/XML。
 
 ## 安裝
 
@@ -35,12 +30,11 @@ composer require mattmy/laravel-icalendar-reader
 
 ## 設定
 
-套件安裝後可直接使用以下預設值：
+- `max_bytes` 預設限制每次輸入最多 10 MiB。
+- `floating_timezone` 預設為 `null`。DATE 值和沒有 `Z` 或 `TZID` 的日期時間會使用有效的
+  `app.timezone`。若 `app.timezone` 無效，則使用 UTC。
 
-- `max_bytes`：每次最多接受 10 MiB 輸入。
-- `floating_timezone`：沒有 `Z` 或 `TZID` 的 date-time 使用 `app.timezone`。
-
-需要調整時再發布 `config/icalendar_reader.php`：
+如需調整設定，可發布 `config/icalendar_reader.php`。
 
 ```bash
 php artisan vendor:publish --tag=icalendar-reader-config
@@ -72,7 +66,7 @@ echo $event->startsAt?->toIso8601String(); // 2026-08-10T09:00:00+00:00
 
 ## 讀取行事曆資料
 
-依輸入來源選擇方法：
+依輸入來源選一個方法。
 
 ```php
 use Mattmy\ICalendar\Facades\ICalendar;
@@ -83,8 +77,8 @@ $calendar = ICalendar::fromStream($stream);
 $calendar = ICalendar::fromUploadedFile($uploadedFile);
 ```
 
-每個方法都回傳相同的 `Calendar` 類型。對應的 `try*()` 方法會在 iCalendar 內容不合法時
-回傳 `null`；來源、大小與設定錯誤仍會拋出各自的例外。
+四個方法讀取成功後都會回傳 `Calendar`。若希望內容不合法時回傳 `null`，可改用對應的
+`try*()` 方法，例如 `tryFromPath()`。來源、大小與設定錯誤仍會拋出各自的例外。
 
 ```php
 $events = $calendar->events('event@example.test');
@@ -99,14 +93,16 @@ $customProperty = $calendar->property('X-CUSTOM');
 $json = $calendar->toJson(JSON_PRETTY_PRINT);
 ```
 
-UID 比對區分大小寫，Collections 會保留文件順序。`eventsBetween()` 使用輸入中的事件
-components；`occurrencesBetween()` 會展開有界的 VEVENT recurrence，包括
-`RDATE;VALUE=PERIOD` 的 explicit duration，並套用 3,500 candidates 的工作上限。
+UID 比對區分大小寫。`events()`、`todos()` 和 `journals()` 依行事曆原始順序回傳結果。
+`eventsBetween()` 查詢行事曆原有的事件。`occurrencesBetween()` 還會展開重複事件，包含
+`RDATE;VALUE=PERIOD`，並依開始時間排序。查詢評估超過 3,500 個候選時，會拋出
+`RecurrenceLimitExceeded`。
 
-Calendar 內相符的 `VTIMEZONE` 定義優先於 host tzdata。Alarm object 提供 attachments、
-直接 properties、extension data 與 raw component。
-Journal 保留重複 descriptions 與 recurrence 資料，但不提供 alarm、範圍查詢或
-recurrence expansion API。
+`eventsBetween()` 無法確認必要的結束時間時，會拋出 `UnresolvableEventRange`。
+`occurrencesBetween()` 中的非重複事件也適用。若無法解析展開所需的日期，則會拋出
+`UnsupportedRecurrence`。
+
+`TZID` 日期會使用行事曆內相符的 `VTIMEZONE`。
 
 ## 驗證與警告
 
@@ -122,16 +118,15 @@ try {
 }
 ```
 
-`issues()` 說明內容遭拒絕的原因；`warnings()` 回報成功讀取後仍需留意的內容或設定。
-除了 Sabre validation，套件也驗證 temporal、alarm、date-time、INTEGER、BOOLEAN／FLOAT、
-PERIOD 與基本 RRULE 規則；目前 API 只接受恰好一個 VCALENDAR object。
-非法原始值在 hydration 前拒絕；合法但不能展開的規則仍適用 `UnsupportedRecurrence`。
+每次讀取接受一個 `VCALENDAR`。收到 `InvalidCalendar` 時，用 `issues()` 查看內容遭拒絕的原因。
+讀取成功後，可用 `warnings()` 查看內容或設定警告。合法的重複規則可以讀取，若套件無法展開該規則，
+`occurrencesBetween()` 會拋出 `UnsupportedRecurrence`。
 
 ## 效能與安全
 
-請依應用程式接受的最大行事曆調整 `max_bytes`。`fromPath()` 應使用可信任的本機路徑；
-由呼叫端建立的 stream 應由呼叫端關閉。顯示行事曆文字前應先轉義、開啟行事曆中的 URL
-前應先驗證，也應避免記錄可能包含個人資料的完整輸入或輸出。
+套件會將完整行事曆載入記憶體。請依應用程式需求設定 `max_bytes`，並將可信任的本機路徑
+傳給 `fromPath()`。自行開啟的串流要自行關閉。顯示行事曆文字前先跳脫，開啟連結前先驗證，
+並避免記錄可能含有個人資料的完整行事曆。
 
 ## 文件
 
